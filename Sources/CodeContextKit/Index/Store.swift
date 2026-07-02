@@ -11,7 +11,7 @@ public enum IndexLayer: Sendable {
     case lsp
     case embedding
 
-    var column: String {
+    fileprivate var column: String {
         switch self {
         case .treeSitter: Schema.IndexedFiles.tsIndexed
         case .lsp: Schema.IndexedFiles.lspIndexed
@@ -165,6 +165,12 @@ public final class Store: Sendable {
     /// LSP worker to drain.
     public func drainLspDirty() async throws -> [String] {
         try await drainDirty(column: Schema.IndexedFiles.lspIndexed)
+    }
+
+    /// File paths still awaiting embedding (`embedded = 0`), for the
+    /// embedding worker to drain.
+    public func drainEmbeddingDirty() async throws -> [String] {
+        try await drainDirty(column: Schema.IndexedFiles.embedded)
     }
 
     private func drainDirty(column: String) async throws -> [String] {

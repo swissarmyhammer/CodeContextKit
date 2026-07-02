@@ -19,6 +19,20 @@ comments:
 
     Leaving task in `doing` per /implement workflow — not moving to review myself.
   timestamp: 2026-07-02T19:59:26.991343+00:00
+- actor: wballard
+  id: 01kwj7ex0pwh72wn4873nb4k67
+  text: |-
+    Addressed both review findings via /implement + /tdd:
+
+    1. Added `public func drainEmbeddingDirty() async throws -> [String]` to Store.swift, placed right after `drainLspDirty()`, delegating to the existing private `drainDirty(column:)` helper with `Schema.IndexedFiles.embedded` — exact same pattern as the ts/lsp siblings.
+    2. Marked `IndexLayer.column` as `fileprivate` (confirmed via grep that its only consumer, `Store.markIndexed`, lives in the same file — Store.swift — so `fileprivate` is correctly scoped and nothing outside the file needs it).
+
+    TDD: extended the existing `dirtyFlagDrainAndMarkCycle` test in StoreTests.swift (rather than duplicating a new test) to assert `drainEmbeddingDirty()` at each stage of the cycle — before any layer is marked, after `.treeSitter`/`.lsp` are marked (embedding should still be dirty), and after `.embedding` is marked (should drain empty). Confirmed RED first: `swift test --filter StoreTests` failed to compile with "value of type 'Store' has no member 'drainEmbeddingDirty'" before the fix. After the fix, GREEN.
+
+    Verification: `swift build` exit 0. `swift test` — 14/14 pass across 3 suites (ScaffoldTests, EmbeddingCodecTests, StoreTests). Adversarial double-check (via really-done) independently re-ran build/test, traced the test against plausible mutants (wrong column selection), confirmed diff scope is minimal — verdict PASS.
+
+    Both review-findings checklist items flipped to `- [x]`. Leaving task in `doing` per /implement workflow — not moving to review myself.
+  timestamp: 2026-07-02T20:13:56.118200+00:00
 depends_on:
 - 01KWJ3P3GAY5KVH271AZNAS8D1
 position_column: doing
@@ -39,3 +53,8 @@ Create `Sources/CodeContextKit/Index/Store.swift` (+ `Migrations.swift`, `Embedd
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-07-02 15:02)
+
+- [x] `Sources/CodeContextKit/Index/Store.swift:11` — The diff adds `IndexLayer.embedding` and updates `markIndexed` to support marking files as indexed for the embedding layer, but omits the corresponding `drainEmbeddingDirty` function to read files awaiting embedding — the consuming side of the write/read pair is missing. Add `drainEmbeddingDirty() async throws -> [String]` following the pattern of `drainTsDirty` and `drainLspDirty` so embedding workers can retrieve files marked dirty.
+- [x] `Sources/CodeContextKit/Index/Store.swift:18` — Computed property `column` on public enum `IndexLayer` lacks an explicit access modifier; implicit `internal` should be spelled explicitly to clarify API intent. Mark the property as `fileprivate var column: String {` to explicitly restrict it to Store.swift, or at minimum `internal var column: String {` to make the module-internal scope explicit.

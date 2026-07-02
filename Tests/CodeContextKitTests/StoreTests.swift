@@ -69,13 +69,19 @@ struct StoreTests {
 
             #expect(try await store.drainTsDirty() == ["Sources/A.swift"])
             #expect(try await store.drainLspDirty() == ["Sources/A.swift"])
+            #expect(try await store.drainEmbeddingDirty() == ["Sources/A.swift"])
 
             try await store.markIndexed(filePath: "Sources/A.swift", layer: .treeSitter)
             #expect(try await store.drainTsDirty().isEmpty)
             #expect(try await store.drainLspDirty() == ["Sources/A.swift"])
+            #expect(try await store.drainEmbeddingDirty() == ["Sources/A.swift"])
 
             try await store.markIndexed(filePath: "Sources/A.swift", layer: .lsp)
             #expect(try await store.drainLspDirty().isEmpty)
+            #expect(try await store.drainEmbeddingDirty() == ["Sources/A.swift"])
+
+            try await store.markIndexed(filePath: "Sources/A.swift", layer: .embedding)
+            #expect(try await store.drainEmbeddingDirty().isEmpty)
         }
     }
 
