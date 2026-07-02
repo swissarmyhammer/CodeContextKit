@@ -19,12 +19,19 @@ import TreeSitterPython
 ///   despite plan.md's prose mentioning it).
 /// - `languageServer` is ported from `builtin/lsp/pylsp.yaml`.
 public enum PythonLanguage: LanguageModule {
+    /// The language identifier (`"python"`).
     public static let name = "python"
 
+    /// File extensions this module handles, without a leading dot: `["py"]`.
     public static let fileExtensions = ["py"]
 
     public static let treeSitterLanguage: Language? = Language(tree_sitter_python())
 
+    /// Definition node kind → meta-type mapping: `function_definition` maps
+    /// to `.function` (covers both free functions and methods, since
+    /// tree-sitter-python has no separate method node kind); `class_definition`
+    /// maps to `.type`; `decorated_definition` maps to `.other` since it wraps
+    /// whichever definition it decorates and can't be classified on its own.
     public static let chunkKinds: [String: SymbolMetaType] = [
         "function_definition": .function,
         "class_definition": .type,
@@ -35,11 +42,16 @@ public enum PythonLanguage: LanguageModule {
         "class_definition",
     ]
 
+    /// Marker files that identify a Python project: `pyproject.toml` or
+    /// `setup.py`.
     public static let projectMarkers: [ProjectMarker] = [
         .fileName("pyproject.toml"),
         .fileName("setup.py"),
     ]
 
+    /// The Python language server spec (`pylsp`). Typed as optional per the
+    /// protocol to allow tree-sitter-only modules with no server; Python
+    /// always provides one.
     public static let languageServer: ServerSpec? = ServerSpec(
         command: "pylsp",
         languageIDs: ["python"],

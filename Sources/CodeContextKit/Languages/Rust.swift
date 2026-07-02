@@ -18,12 +18,21 @@ import TreeSitterRust
 ///   `PROJECT_TYPE_SPECS` entry for `ProjectType::Rust`.
 /// - `languageServer` is ported from `builtin/lsp/rust-analyzer.yaml`.
 public enum RustLanguage: LanguageModule {
+    /// The language identifier (`"rust"`).
     public static let name = "rust"
 
+    /// File extensions this module handles, without a leading dot: `["rs"]`.
     public static let fileExtensions = ["rs"]
 
+    /// The tree-sitter-rust grammar entry point used to parse `.rs` source.
     public static let treeSitterLanguage: Language? = Language(tree_sitter_rust())
 
+    /// Definition node kind → meta-type mapping: `function_item` maps to
+    /// `.function` (covers both free functions and methods — the distinction
+    /// is purely positional, inside vs. outside an `impl` block, not a
+    /// separate node kind); `struct_item`, `enum_item`, `trait_item`, and
+    /// `type_item` map to `.type`; `impl_item`, `mod_item`,
+    /// `macro_definition`, `const_item`, and `static_item` map to `.other`.
     public static let chunkKinds: [String: SymbolMetaType] = [
         "function_item": .function,
         "impl_item": .other,
@@ -43,10 +52,14 @@ public enum RustLanguage: LanguageModule {
         "trait_item",
     ]
 
+    /// The marker file that identifies a Rust project: `Cargo.toml`.
     public static let projectMarkers: [ProjectMarker] = [
         .fileName("Cargo.toml"),
     ]
 
+    /// The Rust language server spec (`rust-analyzer`). Typed as optional
+    /// per the protocol to allow tree-sitter-only modules with no server;
+    /// Rust always provides one.
     public static let languageServer: ServerSpec? = ServerSpec(
         command: "rust-analyzer",
         languageIDs: ["rust"],
