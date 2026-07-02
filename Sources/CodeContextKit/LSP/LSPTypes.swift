@@ -11,17 +11,22 @@ public struct DocumentURI: Sendable, Equatable, Hashable, Codable {
     public let value: String
 
     /// Wraps a raw URI string as a `DocumentURI`.
+    /// - Parameter value: The raw URI string, e.g. `file:///repo/src/main.rs`.
     public init(_ value: String) {
         self.value = value
     }
 
     /// Decodes a `DocumentURI` from its raw JSON string representation.
+    /// - Parameter decoder: The decoder to read the raw URI string from.
+    /// - Throws: If the underlying single-value container can't be decoded as a `String`.
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
         value = try container.decode(String.self)
     }
 
     /// Encodes this `DocumentURI` as its raw JSON string representation.
+    /// - Parameter encoder: The encoder to write the raw URI string to.
+    /// - Throws: If the underlying single-value container can't be encoded.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(value)
@@ -41,6 +46,9 @@ public struct Position: Sendable, Equatable, Hashable, Codable {
     public let character: Int
 
     /// Creates a zero-based line/character position.
+    /// - Parameters:
+    ///   - line: The zero-based line number.
+    ///   - character: The zero-based UTF-16 code unit offset within `line`.
     public init(line: Int, character: Int) {
         self.line = line
         self.character = character
@@ -61,6 +69,9 @@ public struct LSPRange: Sendable, Equatable, Hashable, Codable {
     public let end: Position
 
     /// Creates a start/end span inside a text document.
+    /// - Parameters:
+    ///   - start: The range's start position, inclusive.
+    ///   - end: The range's end position, exclusive.
     public init(start: Position, end: Position) {
         self.start = start
         self.end = end
@@ -76,6 +87,9 @@ public struct Location: Sendable, Equatable, Hashable, Codable {
     public let range: LSPRange
 
     /// Creates a location inside a text document.
+    /// - Parameters:
+    ///   - uri: The document this location refers to.
+    ///   - range: The span within `uri`.
     public init(uri: DocumentURI, range: LSPRange) {
         self.uri = uri
         self.range = range
@@ -93,8 +107,10 @@ public enum DiagnosticSeverity: Int, Sendable, Equatable, Codable {
     /// Reports an informational message.
     case information = 3
 
-    /// Reports a hint. Also the lenient-parsing default for a missing or
-    /// unrecognized severity value (see `Diagnostic.init(from:)`).
+    /// Reports a hint.
+    ///
+    /// Also the lenient-parsing default for a missing or unrecognized
+    /// severity value (see `Diagnostic.init(from:)`).
     case hint = 4
 }
 
@@ -129,6 +145,12 @@ public struct Diagnostic: Sendable, Equatable {
     public let message: String
 
     /// Creates a single diagnostic.
+    /// - Parameters:
+    ///   - range: The span of the document this diagnostic applies to.
+    ///   - severity: The diagnostic's severity.
+    ///   - code: The server's diagnostic code (e.g. `"E0308"`), if any.
+    ///   - source: The tool that produced this diagnostic (e.g. `"rustc"`), if any.
+    ///   - message: The human-readable diagnostic message.
     public init(range: LSPRange, severity: DiagnosticSeverity, code: String?, source: String?, message: String) {
         self.range = range
         self.severity = severity
@@ -148,6 +170,8 @@ extension Diagnostic: Codable {
     }
 
     /// Leniently decodes a diagnostic, per this type's documented rules.
+    /// - Parameter decoder: The decoder to read the diagnostic's keyed fields from.
+    /// - Throws: If `range` or `message` is missing or has an unexpected JSON type.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         range = try container.decode(LSPRange.self, forKey: .range)
@@ -174,6 +198,8 @@ extension Diagnostic: Codable {
     }
 
     /// Encodes a diagnostic, including its resolved `severity`.
+    /// - Parameter encoder: The encoder to write the diagnostic's keyed fields to.
+    /// - Throws: If any field fails to encode.
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(range, forKey: .range)
@@ -271,6 +297,13 @@ public struct CallHierarchyItem: Sendable, Equatable, Codable {
     public let selectionRange: LSPRange
 
     /// Creates a call hierarchy item.
+    /// - Parameters:
+    ///   - name: The symbol's name, as displayed by the server.
+    ///   - kind: The symbol's kind.
+    ///   - detail: Extra detail about the symbol (e.g. a function signature), if any.
+    ///   - uri: The document containing the symbol.
+    ///   - range: The symbol's full span, including its body.
+    ///   - selectionRange: The span of just the symbol's name, used for highlighting.
     public init(name: String, kind: SymbolKind, detail: String?, uri: DocumentURI, range: LSPRange, selectionRange: LSPRange) {
         self.name = name
         self.kind = kind

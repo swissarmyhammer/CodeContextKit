@@ -22,6 +22,31 @@ comments:
 
     Leaving task in `doing` for `/review`.
   timestamp: 2026-07-02T23:06:28.032103+00:00
+- actor: wballard
+  id: 01kwjjaek7zxrdhdahq86aag86
+  text: |-
+    Resolved all 9 Review Findings (2026-07-02 18:09) doc-comment items in Sources/CodeContextKit/LSP/LSPTypes.swift. Added `- Parameter`/`- Parameters:`/`- Throws:` blocks to:
+
+    1. DocumentURI.init(_ value:) — `- Parameter value:`
+    2. DocumentURI.init(from decoder:) — `- Parameter decoder:` + `- Throws:`
+    3. DocumentURI.encode(to encoder:) — `- Parameter encoder:` + `- Throws:`
+    4. LSPRange.init(start:end:) — `- Parameters:` for start/end
+    5. Location.init(uri:range:) — `- Parameters:` for uri/range
+    6. Diagnostic.init(range:severity:code:source:message:) — `- Parameters:` for all 5
+    7. Diagnostic.init(from decoder:) — `- Parameter decoder:` + `- Throws:`
+    8. Diagnostic.encode(to encoder:) — `- Parameter encoder:` + `- Throws:`
+    9. CallHierarchyItem.init(name:kind:detail:uri:range:selectionRange:) — `- Parameters:` for all 6
+
+    Exhaustive sweep per the task's request (not limited to the 9 cited lines) found one more undocumented public initializer not in the review findings: Position.init(line:character:) — fixed the same way.
+
+    Verified Wire.swift needs no matching doc rigor: `grep -n "^public\|[^/]public "` (and a broader unscoped grep) confirms it has zero actual `public` declarations — the only occurrences of the word "public" are in the file-header comment explaining the design rationale (why LSPTypes.swift types are public and Wire.swift's own types are not). Confirmed independently by the double-check agent too.
+
+    Adversarial double-check (via really-done skill) caught one thing on the first pass: the `DiagnosticSeverity.hint` case doc comment's first physical line wasn't a complete, period-terminated sentence (it ran "Reports a hint. Also the lenient-parsing default for a missing or" onto the next line, unlike every other multi-line doc comment in the file which uses summary-line + blank-`///` + elaboration). Fixed to match the established pattern. Re-ran double-check: PASS, confirming every doc-comment first line in the file (types, properties, enum cases, functions) is now a complete standalone sentence, and no other public init/Codable method was missed.
+
+    Verification: `swift build` — exit 0, no new warnings. `swift test` — 116/116 tests pass across 6 suites (WireTests, StoreTests, LanguageModuleTests, ScaffoldTests, EmbeddingCodecTests, RankerTests), re-run fresh after the final fix.
+
+    Leaving task in `doing` for `/review`.
+  timestamp: 2026-07-02T23:23:44.615218+00:00
 depends_on:
 - 01KWJ3P3GAY5KVH271AZNAS8D1
 position_column: doing
@@ -44,3 +69,15 @@ Note: the shared "Range" type is implemented as `LSPRange` (not `Range`) to avoi
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-07-02 18:09)
+
+- [x] `Sources/CodeContextKit/LSP/LSPTypes.swift:14` — Public initializer lacks parameter documentation. The rule requires parameters to be documented with `- Parameter` or `- Parameters:` block. Add parameter documentation: `/// - Parameter value: The raw URI string, e.g. `file:///repo/src/main.rs`.`.
+- [x] `Sources/CodeContextKit/LSP/LSPTypes.swift:18` — Public initializer with parameter and throws lacks documentation. The `from decoder: Decoder` parameter and the throws clause are undocumented. Add parameter and throws documentation: `/// - Parameter decoder: The decoder to read from.` and `/// - Throws: If the JSON is invalid.`.
+- [x] `Sources/CodeContextKit/LSP/LSPTypes.swift:22` — Public method with parameter and throws lacks documentation for `to encoder: Encoder` parameter and throws clause. Add parameter and throws documentation: `/// - Parameter encoder: The encoder to write to.` and `/// - Throws: If encoding fails.`.
+- [x] `Sources/CodeContextKit/LSP/LSPTypes.swift:55` — Public initializer lacks parameter documentation for `start` and `end` parameters. Add parameter documentation block documenting both `start` and `end` parameters.
+- [x] `Sources/CodeContextKit/LSP/LSPTypes.swift:77` — Public initializer lacks parameter documentation for `uri` and `range` parameters. Add parameter documentation block documenting both `uri` and `range` parameters.
+- [x] `Sources/CodeContextKit/LSP/LSPTypes.swift:128` — Public initializer lacks parameter documentation for its 5 parameters: `range`, `severity`, `code`, `source`, `message`. Add `- Parameters:` block documenting all five parameters: range, severity, code, source, and message.
+- [x] `Sources/CodeContextKit/LSP/LSPTypes.swift:152` — Public initializer with parameter and throws lacks documentation for `from decoder: Decoder` parameter and throws clause. Add parameter and throws documentation below the description comment.
+- [x] `Sources/CodeContextKit/LSP/LSPTypes.swift:174` — Public method with parameter and throws lacks documentation for `to encoder: Encoder` parameter and throws clause. Add parameter and throws documentation below the description comment.
+- [x] `Sources/CodeContextKit/LSP/LSPTypes.swift:233` — Public initializer lacks parameter documentation for its 6 parameters: `name`, `kind`, `detail`, `uri`, `range`, `selectionRange`. Add `- Parameters:` block documenting all six parameters.
