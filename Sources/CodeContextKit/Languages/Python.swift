@@ -1,8 +1,7 @@
 import SwiftTreeSitter
 import TreeSitterPython
 
-/// The Python `LanguageModule`: grammar, chunk rules, project markers, and
-/// LSP server spec for `.py` files.
+/// The Python `LanguageModule`: grammar, chunk rules, project markers, and LSP server spec for `.py` files.
 ///
 /// - Chunk kinds are ported from the Python section of the Rust
 ///   `swissarmyhammer-treesitter/src/chunk.rs` `EMBEDDABLE_NODE_KINDS`
@@ -28,37 +27,43 @@ public enum PythonLanguage: LanguageModule {
     /// The tree-sitter-python grammar entry point used to parse `.py` source.
     public static let treeSitterLanguage: Language? = Language(tree_sitter_python())
 
-    /// Definition node kind → meta-type mapping: `function_definition` maps
-    /// to `.function` (covers both free functions and methods, since
-    /// tree-sitter-python has no separate method node kind); `class_definition`
-    /// maps to `.type`; `decorated_definition` maps to `.other` since it wraps
-    /// whichever definition it decorates and can't be classified on its own.
+    /// Definition node kind → meta-type mapping.
+    ///
+    /// `function_definition` maps to `.function` (covers both free functions
+    /// and methods, since tree-sitter-python has no separate method node
+    /// kind); `class_definition` maps to `.type`; `decorated_definition`
+    /// maps to `.other` since it wraps whichever definition it decorates and
+    /// can't be classified on its own.
     public static let chunkKinds: [String: SymbolMetaType] = [
         "function_definition": .function,
         "class_definition": .type,
         "decorated_definition": .other,
     ]
 
-    /// Node kinds that provide naming context for nested symbols'
-    /// `symbol_path` without being chunked themselves: class definitions,
-    /// so a method inside a class is qualified as `ClassName.method`.
+    /// Node kinds that provide naming context for nested symbols' symbol_path.
+    ///
+    /// Class definitions provide this naming context without being chunked
+    /// themselves, so a method inside a class is qualified as
+    /// `ClassName.method`.
     public static let containerNodeKinds: Set<String> = [
         "class_definition",
     ]
 
-    /// Marker files that identify a Python project: `pyproject.toml` or
-    /// `setup.py`.
+    /// Marker files that identify a Python project.
+    ///
+    /// `pyproject.toml` or `setup.py`.
     public static let projectMarkers: [ProjectMarker] = [
         .fileName("pyproject.toml"),
         .fileName("setup.py"),
     ]
 
-    /// The Python language server spec (`pylsp`). Typed as optional per the
-    /// protocol to allow tree-sitter-only modules with no server; Python
-    /// always provides one.
+    /// The Python language server spec (`pylsp`).
+    ///
+    /// Typed as optional per the protocol to allow tree-sitter-only modules
+    /// with no server; Python always provides one.
     public static let languageServer: ServerSpec? = ServerSpec(
         command: "pylsp",
-        languageIDs: ["python"],
+        languageIDs: [name],
         installHint: "Install python-lsp-server: pip install python-lsp-server"
     )
 }
