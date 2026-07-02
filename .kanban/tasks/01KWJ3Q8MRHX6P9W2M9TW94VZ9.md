@@ -47,10 +47,14 @@ comments:
 
     Leaving task in `doing` for `/review`.
   timestamp: 2026-07-02T23:23:44.615218+00:00
+- actor: wballard
+  id: 01kwjjjjngy1djfjw7tf6dttw0
+  text: 'Implemented LSP JSON-RPC wire codec + typed payloads (LSPTypes.swift, Wire.swift), tested, checkpointed (cbd170d). 2 review/fix cycles: missing param/throws docs on public initializers/Codable methods (cbd170d→fa774eb). Final review clean, moved doing → review → done.'
+  timestamp: 2026-07-02T23:28:10.928243+00:00
 depends_on:
 - 01KWJ3P3GAY5KVH271AZNAS8D1
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8480'
 title: LSP wire codec and typed message payloads (private JSON-RPC)
 ---
 ## What
