@@ -1,0 +1,21 @@
+---
+depends_on:
+- 01KWJ3P3GAY5KVH271AZNAS8D1
+position_column: todo
+position_ordinal: '8380'
+title: 'Search ranker primitives: BM25, trigram Dice, RRF fusion'
+---
+## What
+Pure-Swift port of `crates/swissarmyhammer-search` primitives into `Sources/CodeContextKit/Search/`: `Tokenizer.swift` (identifier-aware tokenization matching Rust `tokenize.rs`), `BM25.swift` (corpus with two weighted fields: symbol_path ×5, body ×1), `Trigram.swift` (character-trigram Dice coefficient), `RRF.swift` (Reciprocal Rank Fusion, K=60, per-signal weights, absent-signal tolerance, [0,1] normalization), `Hit.swift` (`Hit` with `Signals { bm25, trigram, cosine }`). No DB or embedder dependency — operates on in-memory documents.
+
+## Acceptance Criteria
+- [ ] RRF: a doc ranked in two signals outranks a doc ranked in one; docs absent from a signal contribute nothing for it
+- [ ] BM25 field weighting: symbol_path match outranks body-only match for the same term
+- [ ] Golden tests ported from the Rust crate's cases produce the same orderings
+
+## Tests
+- [ ] `Tests/CodeContextKitTests/RankerTests.swift`: golden ordering cases from `crates/swissarmyhammer-search/src/lib.rs` tests; RRF formula unit tests; trigram Dice known-value tests
+- [ ] Run `swift test --filter RankerTests` → all pass
+
+## Workflow
+- Use `/tdd` — write failing tests first, then implement to make them pass.
