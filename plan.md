@@ -72,8 +72,10 @@ CodeContextKit/
                            // from FoundationModelsRouter)
   Sources/CodeContextKit/
     CodeContext.swift      // public facade (actor)
+    Languages/             // one LanguageModule per language (strategy) — grammar,
+                           // chunk rules, project markers, server spec in one file
     Index/                 // SQLite store, walker/reconciler, workers, watcher
-    TreeSitter/            // grammar registry, chunker, ts call edges, AST query
+    TreeSitter/            // chunker, ts call edges, AST query (generic over Languages/)
     Search/                // BM25, trigram, cosine, RRF fusion
     LSP/                   // transport, session, daemon, supervisor, registry
     Diagnostics/           // diagnose, settle, report types
@@ -129,17 +131,20 @@ minimal event-callback seam later — but don't build it now.
 
 ## Architecture
 
-### The index (SQLite, same schema)
+### The index (SQLite, Rust-derived schema — owned by us)
 
-Keep the Rust schema nearly verbatim — it's proven and simple:
+Start from the Rust schema — it's proven and simple — but it's ours to evolve:
 
 - `indexed_files(file_path PK, content_hash, file_size, last_seen_at, ts_indexed, lsp_indexed, embedded)` — per-layer dirty flags
-- `ts_chunks(file_path FK CASCADE, byte/line ranges, text, symbol_path, embedding BLOB?)` — little-endian Float32 blob
+- `ts_chunks(file_path FK CASCADE, byte/line ranges, text, symbol_path, kind, embedding BLOB?)` — embedding is a little-endian Float32 blob; `kind` is the chunk's **meta-type** (`function | method | type | other`, from the language module's `chunkKinds` map — one addition over the Rust schema, so kind-aware ops don't re-parse)
 - `lsp_symbols(id PK, name, kind, file_path FK CASCADE, ranges, detail)`
 - `lsp_call_edges(caller_id, callee_id, files, from_ranges, source: 'lsp'|'treesitter')`
 
-Location: `<root>/.code-context/index.db`, WAL mode, dir self-gitignored —
-same as Rust, so both implementations could even share on-disk conventions.
+Location: `<root>/.code-context/kit.db`, WAL mode, dir self-gitignored. Same
+directory convention as Rust sah but **our own database file** — no
+cross-implementation compatibility (decided), so Rust's `index.db` and our
+`kit.db` can coexist in one workspace without ever sharing a writer, and the
+schema evolves freely through GRDB migrations.
 
 **Startup reconcile** (`startup_cleanup` port): gitignore-aware walk
 (replicate `ignore::WalkBuilder` semantics — honor `.gitignore`, skip hidden
@@ -165,24 +170,103 @@ all layers dirty, new → INSERT dirty.
 source extensions → mark dirty / delete rows → nudge workers. This replaces
 Rust's `notify`/`async-watcher`; `FanoutWatcher` collapses to direct calls.
 
+### Language modules (strategy pattern)
+
+Everything language-specific lives in **one module per language, one file
+each**, under `Sources/CodeContextKit/Languages/`. This replaces the Rust
+side's three parallel tables (tree-sitter `LANGUAGES`, the YAML `ServerSpec`
+registry, and the project-detection marker table) with a single strategy:
+
+```swift
+public protocol LanguageModule: Sendable {
+    static var name: String { get }                    // "swift"
+    static var fileExtensions: [String] { get }        // ["swift"]
+    static var treeSitterLanguage: Language? { get }   // grammar entry point
+    static var chunkKinds: [String: SymbolMetaType] { get }
+        // definition node kind → meta-type, e.g. "function_item": .function,
+        // "class_declaration": .type — drives chunking AND kind-aware ops
+    static var containerNodeKinds: Set<String> { get }   // impl/class/mod → symbol_path
+    static var projectMarkers: [ProjectMarker] { get } // Package.swift, *.xcodeproj
+    static var languageServer: ServerSpec? { get }     // nil → tree-sitter-only
+}
+
+// Languages/Swift.swift, Languages/Rust.swift, Languages/Java.swift, …
+// The ONE place a new language is wired in:
+enum Languages {
+    static let all: [any LanguageModule.Type] = [
+        SwiftLanguage.self, RustLanguage.self, PythonLanguage.self, /* … */
+    ]
+}
+```
+
+- The chunker, project detection, the LSP supervisor, and extension→language
+  routing are all **generic consumers of `Languages.all`** — none of them
+  contain per-language knowledge.
+- Adding a language = one new file conforming to `LanguageModule` + one line
+  in `Languages.all`. No other file changes.
+- Multi-language servers compose naturally: the javascript, typescript, and
+  tsx modules all reference the same `typescript-language-server` spec
+  (c/cpp → clangd likewise); the supervisor's dedupe-by-command collapses
+  them to one daemon.
+- Tree-sitter-only entries (json, yaml, markdown, sql, bash) set
+  `languageServer: nil`; detection-only cases are `treeSitterLanguage: nil`.
+
 ### Tree-sitter layer
 
-- `LanguageRegistry`: static table of `(name, Language, extensions)` using
-  SwiftTreeSitter + grammar SPM packages. Extraction stays **node-kind driven**
-  (port `EMBEDDABLE_NODE_KINDS` / `CONTAINER_KINDS` tables and the name-field
-  heuristics) — no `.scm` files, matching the Rust design.
-- Start with a pragmatic language set rather than all 30 (see Open Questions).
+- Grammar registry derives from `Languages.all` (SwiftTreeSitter + grammar
+  SPM packages). Extraction stays **node-kind driven** via each module's
+  `chunkKinds` / `containerNodeKinds` and the shared name-field
+  heuristics — no `.scm` files, matching the Rust design. Every chunk is
+  stamped with its meta-type from `chunkKinds` at extraction time.
 - `queryAST` op compiles user S-expression queries at runtime against files on
   disk (SwiftTreeSitter supports this directly).
 
 ### Search
 
-Pure-Swift port of `swissarmyhammer-search`: BM25 corpus, character-trigram
-Dice, cosine over chunk embeddings, fused with Reciprocal Rank Fusion, two
-weighted fields (`symbol_path` ×5, body ×1), graceful degradation when a
-signal is absent (e.g. embeddings not done → keyword-only), and an
-`IndexingProgress` note on results while embedding is incomplete. Brute-force
-in-memory scan of embedded chunks — no vector DB, same as Rust.
+Pure-Swift port of `swissarmyhammer-search`. Three independent signals per
+query, each producing a **ranking**, fused by rank — never by raw score:
+
+1. **BM25** over tokenized chunk text, two weighted fields
+   (`symbol_path` ×5, body ×1).
+2. **Character-trigram Dice** — typo/partial-identifier tolerance.
+3. **Cosine** between the query embedding and chunk embeddings.
+
+**Fusion is Reciprocal Rank Fusion** (rank-based, same as Rust's `rrf_fuse`):
+
+```
+score(chunk) = Σ_signal  weight_signal / (K + rank_signal(chunk))     K = 60
+```
+
+BM25 scores, Dice coefficients, and cosines live on incomparable scales;
+RRF sidesteps calibration entirely — only each signal's rank order matters.
+A chunk missing from a signal (e.g. not yet embedded) simply contributes
+nothing for that signal; fused scores are normalized to [0,1] and each `Hit`
+carries its per-signal `Signals { bm25, trigram, cosine }` for
+explainability. No embeddings at all → keyword-only results plus an
+`IndexingProgress` note, same graceful degradation as Rust.
+
+**Where the cosines happen — in process, on CPU, via Accelerate:**
+
+- A `SearchCorpus` cache (owned by `CodeContext`) holds all embedded chunks
+  in one **contiguous `[Float]` matrix** (N×dim, row per chunk, id sidecar
+  array) plus the tokenized BM25/trigram structures. Loaded lazily from
+  `ts_chunks` on first query, invalidated by a generation counter the
+  indexing workers bump on write — next query reloads only if stale.
+- Both corpus and query vectors are **L2-normalized** (the embedder
+  guarantees it; the fake too), so **cosine = dot product**, and scoring all
+  N chunks is one matrix–vector multiply: `cblas_sgemv`/vDSP over the cached
+  matrix. ~100k chunks × 1024 dims ≈ 100M MACs — single-digit milliseconds
+  on CPU; no Metal/MLX at query time (MLX is only inside the embedder when
+  the *query text* is embedded, one call per search).
+- `findDuplicates` reuses the same matrix: candidate pairs are compared
+  within their meta-type partition (matrix–matrix product per partition when
+  scoped to the workspace, one matvec per source chunk when scoped to a
+  file), thresholded at `minSimilarity`.
+- No vector DB and no ANN index by design — brute force is exact,
+  zero-maintenance, and at workspace scale (10⁴–10⁵ chunks) faster than the
+  bookkeeping an index would add. The seam to revisit: if a corpus ever
+  exceeds ~10⁶ chunks, swap the matvec for a partitioned scan behind the
+  same `SearchCorpus` API.
 
 ### Embeddings
 
@@ -223,11 +307,12 @@ what decides which language servers to spawn.
   `package.json`/`tsconfig.json` → javascript/typescript, `go.mod` → go,
   `pyproject.toml`/`setup.py`/`requirements.txt` → python,
   `pom.xml`/`build.gradle` → java, `*.csproj`/`*.sln` → c#,
-  `composer.json` → php, `CMakeLists.txt`/`Makefile` → c/cpp (same marker
-  table as the Rust crate). One directory can match **multiple types**, and a
-  monorepo yields one `DetectedProject(type, directory)` per hit.
-- **Output → servers**: the union of detected types maps through the
-  `ServerSpec` registry, **deduped by command**, so a polyglot monorepo with
+  `composer.json` → php, `CMakeLists.txt`/`Makefile` → c/cpp — each marker
+  declared by its `LanguageModule` (same marker semantics as the Rust crate).
+  One directory can match **multiple types**, and a monorepo yields one
+  `DetectedProject(type, directory)` per hit.
+- **Output → servers**: the union of detected types maps through each
+  module's `languageServer` spec, **deduped by command**, so a polyglot monorepo with
   six `package.json`s still runs exactly one `typescript-language-server`.
   Every daemon is initialized with the workspace `rootDirectory` as its
   `rootUri` — no per-sub-project roots, same simplification as Rust.
@@ -240,10 +325,12 @@ what decides which language servers to spawn.
 Direct port of `swissarmyhammer-lsp`, minus election. All mutex-guarded shared
 state becomes actors.
 
-- **`ServerSpec` registry**: the 12 Rust YAML specs become a static Swift
-  array — `command, args, projectTypes, languageIds, fileExtensions,
-  startupTimeout (30s), healthCheckInterval (60s), installHint`. Adding a
-  server = adding a value. (Drop the `doctor:` blocks for now.)
+- **`ServerSpec`**: the Rust YAML spec fields become a plain Swift value —
+  `command, args, languageIds, startupTimeout (30s), healthCheckInterval
+  (60s), installHint` — declared by each `LanguageModule` (shared instances
+  for multi-language servers like `typescript-language-server` and `clangd`).
+  No standalone registry; the supervisor collects specs from `Languages.all`.
+  (Drop the `doctor:` blocks for now.)
 - **Typed Swift API, no JSON-RPC layer.** The servers are external stdio
   processes whose only wire format is JSON-RPC, so `Content-Length` framing
   and message encoding exist — but strictly as a **private wire codec inside
@@ -361,9 +448,17 @@ Ops surface (public methods on `CodeContext`, mirroring the Rust op set):
   (BFS over edges, direction in/out/both, depth ≤5), `blastRadius`
   (inbound BFS, hops ≤10, per-hop file aggregation), `indexStatus`,
   `rebuildIndex(layer:)`, `detectProjects`.
-- **Live LSP**: `definition`, `typeDefinition`, `hover`, `references`,
-  `implementations`, `codeActions`, `renameEdits` (prepare+rename under one
-  transport hold), `inboundCalls`, `workspaceSymbols`, `lspStatus`.
+- **`findDuplicates` is meta-type-aware**: near-duplicate detection over
+  symbol bodies compares **similar of a similar meta-type only** — methods
+  against methods/functions, types against types — using the chunk `kind`
+  column. A function body is never reported as a duplicate of a class, no
+  matter the cosine. Scope: whole workspace or one file
+  (`findDuplicates(file:minSimilarity:)`, default 0.85), grouped by source
+  chunk with per-match similarity, same shape as the Rust op.
+- **Live LSP — all ten ship in v1**: `definition`, `typeDefinition`, `hover`,
+  `references`, `implementations`, `codeActions`, `renameEdits`
+  (prepare+rename under one connection hold), `inboundCalls`,
+  `workspaceSymbols`, plus `lspStatus`.
 - **Diagnostics**: `diagnostics(scope: .workingTree | .file(glob) | .sha(range))`
   with the settle engine — seed from cache, wait for **300ms quiescence**,
   hard timeout **5s** → `pending: true`; fold in only *broken* one-hop
@@ -379,9 +474,10 @@ Ops surface (public methods on `CodeContext`, mirroring the Rust op set):
    embedding codec, meta table (embedder dimension).
 3. **Walker/reconciler** — gitignore-aware walk, concurrent hashing,
    reconcile logic (port of `startup_cleanup`), `.code-context/` bootstrap.
-4. **Tree-sitter layer** — registry, chunker (`EMBEDDABLE_NODE_KINDS`,
-   `symbol_path` qualification), TS worker writing chunks; then the TS
-   call-edge heuristic; then `queryAST`.
+4. **Language modules + tree-sitter layer** — `LanguageModule` protocol,
+   `Languages.all`, the v1 module files (node-kind tables ported per
+   language), generic chunker (`symbol_path` qualification), TS worker
+   writing chunks; then the TS call-edge heuristic; then `queryAST`.
 5. **Embedding seam** — `TextEmbedding` protocol, fake for tests,
    `RoutedEmbedderAdapter`, batch embedding inside the TS worker.
 6. **Search** — BM25/trigram/cosine/RRF port + `searchCode`, `findDuplicates`.
@@ -440,11 +536,18 @@ Ops surface (public methods on `CodeContext`, mirroring the Rust op set):
    all.** Typed Swift API (`LanguageServerConnection`) is the only seam; the
    JSON-RPC wire encoding is a private detail of the process-backed
    implementation. No ChimeHQ/JSONRPC dependency.
-3. **Server registry as Swift code** (no YAML/Yams) — fine, or do you want
-   drop-in file extensibility from day one?
-4. **Index compatibility.** Keep `.code-context/index.db` name/schema so Rust
-   sah and CodeContextKit could share a workspace index, or rename (e.g. own
-   subdir) to avoid two writers ever colliding? Plan currently assumes same
-   conventions but nothing shared at runtime.
-5. **Live-op set for v1** — all ten live LSP ops, or trim (e.g. defer
-   codeActions/renameEdits) to land the core faster?
+3. ~~Server registry: Swift code vs drop-in files~~ **Resolved: code only, as
+   a strategy pattern.** No file/YAML extensibility — adding a language is
+   easy enough in code. Everything language-specific (grammar, chunk node
+   kinds, project markers, server spec) lives in one `LanguageModule` per
+   language, one file each, registered in `Languages.all`; all consumers are
+   generic over that list (see "Language modules").
+4. ~~Index compatibility~~ **Resolved: not needed.** CodeContextKit owns its
+   schema outright — same `.code-context/` directory convention, but its own
+   `kit.db` file, so Rust sah's `index.db` and ours can coexist in one
+   workspace with no shared writer and no schema coupling. Migrations via
+   GRDB, versioned independently.
+5. ~~Live-op set for v1~~ **Resolved: all ten live LSP ops ship in v1** —
+   nothing deferred. Alongside them, `blastRadius` and meta-type-aware
+   `findDuplicates` (methods/functions/types compared only within their own
+   meta-type) are explicitly first-class indexed ops.
