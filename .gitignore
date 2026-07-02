@@ -1,0 +1,5 @@
+.sah/
+.shell/
+.code-context/
+.DS_Store
+.build/
