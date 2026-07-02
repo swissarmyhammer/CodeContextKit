@@ -25,6 +25,7 @@ public enum PythonLanguage: LanguageModule {
     /// File extensions this module handles, without a leading dot: `["py"]`.
     public static let fileExtensions = ["py"]
 
+    /// The tree-sitter-python grammar entry point used to parse `.py` source.
     public static let treeSitterLanguage: Language? = Language(tree_sitter_python())
 
     /// Definition node kind → meta-type mapping: `function_definition` maps
@@ -38,6 +39,9 @@ public enum PythonLanguage: LanguageModule {
         "decorated_definition": .other,
     ]
 
+    /// Node kinds that provide naming context for nested symbols'
+    /// `symbol_path` without being chunked themselves: class definitions,
+    /// so a method inside a class is qualified as `ClassName.method`.
     public static let containerNodeKinds: Set<String> = [
         "class_definition",
     ]

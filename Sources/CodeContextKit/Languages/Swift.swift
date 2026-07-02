@@ -19,8 +19,10 @@ import TreeSitterSwift
 ///   `PROJECT_TYPE_SPECS` entry for `ProjectType::Swift`.
 /// - `languageServer` is ported from `builtin/lsp/sourcekit-lsp.yaml`.
 public enum SwiftLanguage: LanguageModule {
+    /// The language identifier (`"swift"`).
     public static let name = "swift"
 
+    /// File extensions this module handles, without a leading dot: `["swift"]`.
     public static let fileExtensions = ["swift"]
 
     /// The tree-sitter-swift grammar entry point used to parse `.swift` source.
@@ -48,6 +50,8 @@ public enum SwiftLanguage: LanguageModule {
         "extension_declaration",
     ]
 
+    /// Marker files that identify a Swift project: `Package.swift`, or a
+    /// `*.xcodeproj`/`*.xcworkspace` bundle.
     public static let projectMarkers: [ProjectMarker] = [
         .fileName("Package.swift"),
         .glob("*.xcodeproj"),

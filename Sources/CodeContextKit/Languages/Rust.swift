@@ -46,6 +46,10 @@ public enum RustLanguage: LanguageModule {
         "type_item": .type,
     ]
 
+    /// Node kinds that provide naming context for nested symbols'
+    /// `symbol_path` without being chunked themselves: `impl_item` (methods
+    /// implemented for a type), `mod_item` (items nested in a module), and
+    /// `trait_item` (method declarations nested in a trait).
     public static let containerNodeKinds: Set<String> = [
         "impl_item",
         "mod_item",
