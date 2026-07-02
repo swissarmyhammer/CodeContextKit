@@ -27,7 +27,7 @@ public enum Tokenizer {
     ///
     /// - Parameter text: the text to tokenize.
     /// - Returns: the lowercased, code-aware tokens, in order.
-    public static func tokenize(_ text: String) -> [String] {
+    public static func tokenize(text: String) -> [String] {
         let characters = Array(text)
         var tokens: [String] = []
         var run: [Character] = []
@@ -36,12 +36,12 @@ public enum Tokenizer {
         func flushRun() {
             defer { run.removeAll(keepingCapacity: true) }
             guard run.contains(where: { $0.isLetter || $0.isNumber }) else { return }
-            tokens.append(contentsOf: splitRun(run))
+            tokens.append(contentsOf: splitRun(run: run))
         }
 
         for index in characters.indices {
             let character = characters[index]
-            if isWordCharacter(character) || isGluedSeparator(character, in: characters, at: index) {
+            if isWordCharacter(character: character) || isGluedSeparator(character: character, in: characters, at: index) {
                 run.append(character)
             } else {
                 flushRun()
@@ -59,7 +59,7 @@ public enum Tokenizer {
     ///
     /// - Parameter text: the string to window.
     /// - Returns: each 3-character window of the lowercased `text`, in order.
-    public static func charTrigrams(_ text: String) -> [String] {
+    public static func charTrigrams(text: String) -> [String] {
         let characters = Array(text.lowercased())
         guard characters.count >= 3 else { return [] }
         return (0...(characters.count - 3)).map { start in
@@ -69,7 +69,7 @@ public enum Tokenizer {
 
     /// Whether `character` belongs to a word run: a letter, digit,
     /// underscore, or hyphen.
-    private static func isWordCharacter(_ character: Character) -> Bool {
+    private static func isWordCharacter(character: Character) -> Bool {
         character.isLetter || character.isNumber || character == "_" || character == "-"
     }
 
@@ -80,7 +80,7 @@ public enum Tokenizer {
     /// that Rust's `unicode_words()` uses: `foo.bar` and `don't` are single
     /// words, but a leading/trailing `.`/`'`, or one next to other
     /// punctuation, still ends the run.
-    private static func isGluedSeparator(_ character: Character, in characters: [Character], at index: Int) -> Bool {
+    private static func isGluedSeparator(character: Character, in characters: [Character], at index: Int) -> Bool {
         guard character == "." || character == "'" else { return false }
         guard index > characters.startIndex, index + 1 < characters.endIndex else { return false }
         let previous = characters[index - 1]
@@ -92,7 +92,7 @@ public enum Tokenizer {
     ///
     /// First splits on the `_`/`-` delimiters, then splits each delimited
     /// piece on `camelCase`/`PascalCase`/acronym boundaries.
-    private static func splitRun(_ run: [Character]) -> [String] {
+    private static func splitRun(run: [Character]) -> [String] {
         run.split(whereSeparator: { $0 == "_" || $0 == "-" }).flatMap(splitCaseBoundaries)
     }
 
@@ -104,7 +104,7 @@ public enum Tokenizer {
     /// that is itself followed by a lowercase letter (`HTTP|Response`).
     /// Digits never introduce a boundary, so `sha256` and `utf8` stay
     /// whole.
-    private static func splitCaseBoundaries(_ segment: ArraySlice<Character>) -> [String] {
+    private static func splitCaseBoundaries(segment: ArraySlice<Character>) -> [String] {
         let characters = Array(segment)
         guard !characters.isEmpty else { return [] }
 

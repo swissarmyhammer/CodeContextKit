@@ -6,10 +6,10 @@ public enum Trigram {
     /// two strings.
     ///
     /// Computes `2·|A∩B| / (|A|+|B|)` where `A` and `B` are the
-    /// deduplicated canonical trigram sets (`canonicalTrigramSet(_:)`) of
+    /// deduplicated canonical trigram sets (`canonicalTrigramSet(text:)`) of
     /// each input.
     ///
-    /// Each input is canonicalized through `Tokenizer.tokenize(_:)` and
+    /// Each input is canonicalized through `Tokenizer.tokenize(text:)` and
     /// re-joined with single spaces before trigramming. This normalizes
     /// identifier delimiters so that `camelCase`, `snake_case`, and
     /// `kebab-case` spellings of the same words share trigrams — which is
@@ -25,9 +25,9 @@ public enum Trigram {
     /// - Returns: a similarity in `[0.0, 1.0]`; `1.0` for equal canonical
     ///   trigram sets, `0.0` when either side yields no trigrams (too short
     ///   after canonicalization) or the sets are disjoint.
-    public static func dice(_ query: String, _ target: String) -> Double {
-        let queryTrigrams = canonicalTrigramSet(query)
-        let targetTrigrams = canonicalTrigramSet(target)
+    public static func dice(query: String, target: String) -> Double {
+        let queryTrigrams = canonicalTrigramSet(text: query)
+        let targetTrigrams = canonicalTrigramSet(text: target)
         guard !queryTrigrams.isEmpty, !targetTrigrams.isEmpty else { return 0.0 }
         let intersectionCount = Double(queryTrigrams.intersection(targetTrigrams).count)
         return 2.0 * intersectionCount / Double(queryTrigrams.count + targetTrigrams.count)
@@ -38,15 +38,15 @@ public enum Trigram {
     ///
     /// This is the single authority for "does this string have trigrams?":
     /// callers detecting whether the trigram signal carries data for a
-    /// query, and `dice(_:_:)` itself, both go through this canonical form
+    /// query, and `dice(query:target:)` itself, both go through this canonical form
     /// — so a string with an empty canonical trigram set can never
     /// contribute a non-zero trigram score.
     ///
     /// - Parameter text: the string to canonicalize and trigram.
     /// - Returns: the deduplicated set of length-3 character windows of the
     ///   canonical form.
-    public static func canonicalTrigramSet(_ text: String) -> Set<String> {
-        let canonical = Tokenizer.tokenize(text).joined(separator: " ")
-        return Set(Tokenizer.charTrigrams(canonical))
+    public static func canonicalTrigramSet(text: String) -> Set<String> {
+        let canonical = Tokenizer.tokenize(text: text).joined(separator: " ")
+        return Set(Tokenizer.charTrigrams(text: canonical))
     }
 }

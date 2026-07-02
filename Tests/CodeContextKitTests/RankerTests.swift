@@ -11,42 +11,42 @@ struct RankerTests {
 
     @Test
     func camelCaseSplitsLowercased() {
-        #expect(Tokenizer.tokenize("getUserById") == ["get", "user", "by", "id"])
+        #expect(Tokenizer.tokenize(text: "getUserById") == ["get", "user", "by", "id"])
     }
 
     @Test
     func snakeCaseSplits() {
-        #expect(Tokenizer.tokenize("get_user_by_id") == ["get", "user", "by", "id"])
+        #expect(Tokenizer.tokenize(text: "get_user_by_id") == ["get", "user", "by", "id"])
     }
 
     @Test
     func acronymRunSplits() {
-        #expect(Tokenizer.tokenize("getHTTPResponse") == ["get", "http", "response"])
+        #expect(Tokenizer.tokenize(text: "getHTTPResponse") == ["get", "http", "response"])
     }
 
     @Test
     func digitBoundaryExcludedKeepsSha256Whole() {
-        #expect(Tokenizer.tokenize("sha256_hash") == ["sha256", "hash"])
+        #expect(Tokenizer.tokenize(text: "sha256_hash") == ["sha256", "hash"])
     }
 
     @Test
     func digitBoundaryExcludedKeepsUtf8Whole() {
-        #expect(Tokenizer.tokenize("utf8") == ["utf8"])
+        #expect(Tokenizer.tokenize(text: "utf8") == ["utf8"])
     }
 
     @Test
     func punctuationStrippedNoEmptyStrings() {
-        #expect(Tokenizer.tokenize("fn parse_config() -> Result") == ["fn", "parse", "config", "result"])
+        #expect(Tokenizer.tokenize(text: "fn parse_config() -> Result") == ["fn", "parse", "config", "result"])
     }
 
     @Test
     func termFrequencyPreservedDuplicatesNotDeduped() {
-        #expect(Tokenizer.tokenize("foo foo bar") == ["foo", "foo", "bar"])
+        #expect(Tokenizer.tokenize(text: "foo foo bar") == ["foo", "foo", "bar"])
     }
 
     @Test
     func emptyInputYieldsNoTokens() {
-        #expect(Tokenizer.tokenize("").isEmpty)
+        #expect(Tokenizer.tokenize(text: "").isEmpty)
     }
 
     @Test
@@ -55,12 +55,12 @@ struct RankerTests {
         // and glues a letter-flanked period into one word rather than
         // breaking on it; `.` is not an identifier boundary, so the glued
         // run stays a single token.
-        #expect(Tokenizer.tokenize("foo.bar") == ["foo.bar"])
+        #expect(Tokenizer.tokenize(text: "foo.bar") == ["foo.bar"])
     }
 
     @Test
     func apostropheBetweenLettersGluesContraction() {
-        #expect(Tokenizer.tokenize("don't") == ["don't"])
+        #expect(Tokenizer.tokenize(text: "don't") == ["don't"])
     }
 
     @Test
@@ -68,48 +68,48 @@ struct RankerTests {
         // A `.`/`'` only glues when flanked by a letter/digit on *both*
         // sides; at the start/end of the text there is no flanking
         // character, so it behaves like ordinary punctuation.
-        #expect(Tokenizer.tokenize(".foo.") == ["foo"])
+        #expect(Tokenizer.tokenize(text: ".foo.") == ["foo"])
     }
 
     @Test
     func charTrigramsSlidingWindowsLowercased() {
-        #expect(Tokenizer.charTrigrams("get_user") == ["get", "et_", "t_u", "_us", "use", "ser"])
+        #expect(Tokenizer.charTrigrams(text: "get_user") == ["get", "et_", "t_u", "_us", "use", "ser"])
     }
 
     @Test
     func charTrigramsLowercasesInput() {
-        #expect(Tokenizer.charTrigrams("ABCD") == ["abc", "bcd"])
+        #expect(Tokenizer.charTrigrams(text: "ABCD") == ["abc", "bcd"])
     }
 
     @Test
     func charTrigramsShortStringIsEmpty() {
-        #expect(Tokenizer.charTrigrams("").isEmpty)
-        #expect(Tokenizer.charTrigrams("a").isEmpty)
-        #expect(Tokenizer.charTrigrams("ab").isEmpty)
-        #expect(Tokenizer.charTrigrams("abc") == ["abc"])
+        #expect(Tokenizer.charTrigrams(text: "").isEmpty)
+        #expect(Tokenizer.charTrigrams(text: "a").isEmpty)
+        #expect(Tokenizer.charTrigrams(text: "ab").isEmpty)
+        #expect(Tokenizer.charTrigrams(text: "abc") == ["abc"])
     }
 
     // MARK: - Trigram Dice
 
     @Test
     func trigramDiceIdenticalIsOne() {
-        #expect(Trigram.dice("get_user", "get_user") == 1.0)
+        #expect(Trigram.dice(query: "get_user", target: "get_user") == 1.0)
     }
 
     @Test
     func trigramDiceTypoRescueAboveThreshold() {
-        #expect(Trigram.dice("getUsr", "get_user") > 0.4)
+        #expect(Trigram.dice(query: "getUsr", target: "get_user") > 0.4)
     }
 
     @Test
     func trigramDiceDisjointIsZero() {
-        #expect(Trigram.dice("abcdef", "uvwxyz") == 0.0)
+        #expect(Trigram.dice(query: "abcdef", target: "uvwxyz") == 0.0)
     }
 
     @Test
     func trigramDiceNoTrigramsIsZero() {
-        #expect(Trigram.dice("ab", "get_user") == 0.0)
-        #expect(Trigram.dice("get_user", "") == 0.0)
+        #expect(Trigram.dice(query: "ab", target: "get_user") == 0.0)
+        #expect(Trigram.dice(query: "get_user", target: "") == 0.0)
     }
 
     // MARK: - BM25
@@ -269,7 +269,7 @@ struct RankerTests {
         // "best" (doc 0) is rank-0 in both signals -> the maximum
         // achievable score, so normalization lands exactly at 1.0.
         let fused = RRF.fuse(rankedLists: [[0, 1], [0, 1]], weights: [1.0, 1.0])
-        let normalized = RRF.normalize(fused, weights: [1.0, 1.0])
+        let normalized = RRF.normalize(fused: fused, weights: [1.0, 1.0])
         #expect(abs(normalized[0]! - 1.0) < 1e-6)
         #expect(normalized[0]! > normalized[1]!)
     }
@@ -277,7 +277,7 @@ struct RankerTests {
     @Test
     func rrfNormalizeWithNoWeightsIsZeroEverywhere() {
         let fused = RRF.fuse(rankedLists: [[0]], weights: [0.0])
-        let normalized = RRF.normalize(fused, weights: [0.0])
+        let normalized = RRF.normalize(fused: fused, weights: [0.0])
         #expect(normalized[0] == 0.0)
     }
 
@@ -302,8 +302,8 @@ struct RankerTests {
             documentLength: 6,
             queryTokens: query
         )
-        let strongTrigram = Trigram.dice("parse", "parse")
-        let mediocreTrigram = Trigram.dice("parse", "the config value is read lazily later on")
+        let strongTrigram = Trigram.dice(query: "parse", target: "parse")
+        let mediocreTrigram = Trigram.dice(query: "parse", target: "the config value is read lazily later on")
 
         // Assert the per-signal claim directly, so this golden-ordering
         // test is self-evidently testing what it claims — not just

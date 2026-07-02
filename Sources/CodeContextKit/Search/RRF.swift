@@ -59,7 +59,7 @@ public enum RRF {
     /// - Returns: `fused` with every value divided by the maximum
     ///   achievable score; every value is `0.0` when that maximum is `0.0`
     ///   (e.g. all weights are zero).
-    public static func normalize(_ fused: [Int: Double], weights: [Double], k: Double = RRF.k) -> [Int: Double] {
+    public static func normalize(fused: [Int: Double], weights: [Double], k: Double = RRF.k) -> [Int: Double] {
         let maximum = weights.reduce(0.0) { $0 + $1 / k }
         guard maximum != 0.0 else { return fused.mapValues { _ in 0.0 } }
         return fused.mapValues { $0 / maximum }

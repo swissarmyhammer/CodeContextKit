@@ -16,9 +16,9 @@ public struct Signals: Sendable, Equatable {
     public let bm25: Double
 
     /// Character-trigram (fuzzy) score: for a single field this is
-    /// `Trigram.dice(query, field)` in `[0,1]`, but a **field-weighted
+    /// `Trigram.dice(query:target:)` in `[0,1]`, but a **field-weighted
     /// aggregate** across several fields (`Σ field.weight *
-    /// Trigram.dice(query, field.text)`) ranges over `[0, Σ field
+    /// Trigram.dice(query: query, target: field.text)`) ranges over `[0, Σ field
     /// weights]` and so **can exceed 1.0** when fields carry weight > 1 or
     /// several fields match. It is NOT guaranteed to be the `[0,1]` Dice
     /// range.
@@ -50,7 +50,7 @@ public struct Hit: Sendable, Equatable {
     public let id: String
 
     /// The combined, weighted score, normalized to `[0, 1]` by
-    /// `RRF.normalize(_:weights:k:)`.
+    /// `RRF.normalize(fused:weights:k:)`.
     public let score: Double
 
     /// The individual signal scores that produced `score`.
