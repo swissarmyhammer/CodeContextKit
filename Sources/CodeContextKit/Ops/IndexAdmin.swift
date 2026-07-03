@@ -20,6 +20,28 @@ public enum RebuildLayer: String, Codable, Sendable, Hashable, CaseIterable {
 
     /// Reset every layer.
     case all
+
+    /// The `Store.IndexLayer`(s) this rebuild layer resets.
+    ///
+    /// A `switch`, not a `[RebuildLayer: [IndexLayer]]` dictionary — see
+    /// `IndexLayer.column`'s doc comment for the reasoning this codebase
+    /// applies consistently: `RebuildLayer` is a closed enum colocated with
+    /// this mapping, so an exhaustive switch turns a missing case into a
+    /// compile error, instead of `rebuildIndex(store:layer:)` silently
+    /// no-oping (an empty array from a missing dictionary key) the moment a
+    /// new `RebuildLayer` case is added.
+    var indexLayers: [IndexLayer] {
+        switch self {
+        case .treeSitter:
+            return [.treeSitter]
+        case .lsp:
+            return [.lsp]
+        case .embedding:
+            return [.embedding]
+        case .all:
+            return [.treeSitter, .lsp, .embedding]
+        }
+    }
 }
 
 /// The result of an `IndexAdmin.rebuildIndex(store:layer:)` call.
@@ -123,23 +145,30 @@ public enum IndexAdmin {
         try await store.read { db in
             let totalFiles = try count(db: db, whereClause: "")
 
-            // One loop over every layer instead of three copy-pasted count
-            // calls, reusing `IndexLayer.column` — the same mapping
-            // `markIndexed`/`markAllDirty` key off of in `Store` — rather
-            // than re-deriving each layer's column name here.
-            var indexedFiles: [IndexLayer: Int] = [:]
-            for layer in IndexLayer.allCases {
-                indexedFiles[layer] = try count(db: db, whereClause: "WHERE \(layer.column) = 1")
-            }
+            // Three direct calls, not a loop over `IndexLayer.allCases`
+            // collected into a `[IndexLayer: Int]` dictionary: `IndexStatus`
+            // has one hardcoded field per layer (mirroring the Rust
+            // reference's status shape), so a loop that counts every case
+            // would keep computing a future layer's count while this
+            // function still only reads back the three keys it knows about
+            // — the extra count would be silently dropped when building
+            // `IndexStatus`, with nothing here to catch it. Reading each
+            // layer's column via `IndexLayer.<case>.column` still avoids
+            // duplicating the layer-to-column mapping (that lives in
+            // `IndexLayer.column`'s `switch`); only the three known counts
+            // this struct actually has fields for are computed.
+            let treeSitterIndexedFiles = try count(db: db, whereClause: "WHERE \(IndexLayer.treeSitter.column) = 1")
+            let lspIndexedFiles = try count(db: db, whereClause: "WHERE \(IndexLayer.lsp.column) = 1")
+            let embeddedFiles = try count(db: db, whereClause: "WHERE \(IndexLayer.embedding.column) = 1")
 
             return IndexStatus(
                 totalFiles: totalFiles,
-                treeSitterIndexedFiles: indexedFiles[.treeSitter] ?? 0,
-                treeSitterIndexedPercent: percent(numerator: indexedFiles[.treeSitter] ?? 0, denominator: totalFiles),
-                lspIndexedFiles: indexedFiles[.lsp] ?? 0,
-                lspIndexedPercent: percent(numerator: indexedFiles[.lsp] ?? 0, denominator: totalFiles),
-                embeddedFiles: indexedFiles[.embedding] ?? 0,
-                embeddedPercent: percent(numerator: indexedFiles[.embedding] ?? 0, denominator: totalFiles)
+                treeSitterIndexedFiles: treeSitterIndexedFiles,
+                treeSitterIndexedPercent: percent(numerator: treeSitterIndexedFiles, denominator: totalFiles),
+                lspIndexedFiles: lspIndexedFiles,
+                lspIndexedPercent: percent(numerator: lspIndexedFiles, denominator: totalFiles),
+                embeddedFiles: embeddedFiles,
+                embeddedPercent: percent(numerator: embeddedFiles, denominator: totalFiles)
             )
         }
     }
@@ -159,7 +188,7 @@ public enum IndexAdmin {
     @discardableResult
     public static func rebuildIndex(store: Store, layer: RebuildLayer) async throws -> RebuildIndexResult {
         var filesMarked = 0
-        for storeLayer in layerMapping[layer] ?? [] {
+        for storeLayer in layer.indexLayers {
             // Every call's changesCount is the same total row count (the
             // underlying UPDATE carries no WHERE clause, so it always
             // touches every row) regardless of which column it resets;
@@ -168,14 +197,6 @@ public enum IndexAdmin {
         }
         return RebuildIndexResult(layer: layer, filesMarked: filesMarked)
     }
-
-    /// Maps each `RebuildLayer` onto the `Store.IndexLayer`(s) it resets.
-    private static let layerMapping: [RebuildLayer: [IndexLayer]] = [
-        .treeSitter: [.treeSitter],
-        .lsp: [.lsp],
-        .embedding: [.embedding],
-        .all: [.treeSitter, .lsp, .embedding],
-    ]
 
     /// Runs `SELECT COUNT(*) FROM indexed_files <whereClause>` and returns
     /// the count.

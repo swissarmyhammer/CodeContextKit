@@ -6,7 +6,7 @@ import GRDB
 /// `markIndexed(filePath:layer:)` flips one of these flags to `true` when
 /// its worker finishes a file; `markDirty(filePath:...)` resets all three
 /// to `false` for a new or changed file.
-public enum IndexLayer: Sendable, Hashable, CaseIterable {
+public enum IndexLayer: Sendable, Hashable {
     /// The tree-sitter parse layer (`ts_indexed`).
     case treeSitter
 
@@ -16,18 +16,29 @@ public enum IndexLayer: Sendable, Hashable, CaseIterable {
     /// The embedding layer (`embedded`).
     case embedding
 
-    /// Maps each layer onto its `indexed_files` dirty-flag column.
-    private static let columnNames: [IndexLayer: String] = [
-        .treeSitter: Schema.IndexedFiles.tsIndexed,
-        .lsp: Schema.IndexedFiles.lspIndexed,
-        .embedding: Schema.IndexedFiles.embedded,
-    ]
-
     /// This layer's `indexed_files` dirty-flag column name. Internal rather
     /// than `private`/`fileprivate` so `IndexAdmin` can reuse it instead of
     /// duplicating the layer-to-column mapping.
+    ///
+    /// A `switch`, not a `[IndexLayer: String]` dictionary: this mapping is
+    /// closed (three cases, all colocated with this type) and never crosses
+    /// a type or module boundary, so an exhaustive switch is the safer
+    /// choice — the compiler rejects a missing arm at build time, whereas a
+    /// dictionary lookup only fails at run time (via `!` force-unwrap, or
+    /// silently via `??`/`Optional` if the `!` is later "fixed" away). This
+    /// is the deliberate, final answer for every enum-to-related-value
+    /// mapping in this file and `IndexAdmin` (`RebuildLayer.indexLayers`,
+    /// `IndexAdmin.indexStatus`'s per-layer counting) — please don't
+    /// re-litigate switch-vs-dictionary here again.
     var column: String {
-        Self.columnNames[self]!
+        switch self {
+        case .treeSitter:
+            return Schema.IndexedFiles.tsIndexed
+        case .lsp:
+            return Schema.IndexedFiles.lspIndexed
+        case .embedding:
+            return Schema.IndexedFiles.embedded
+        }
     }
 }
 
@@ -202,7 +213,7 @@ public final class Store: Sendable {
     /// - Returns: The dirty file paths, in path order.
     /// - Throws: `CodeContextError.storage` if the query fails.
     public func drainTsDirty() async throws -> [String] {
-        try await drainDirty(column: Schema.IndexedFiles.tsIndexed)
+        try await drainDirty(column: IndexLayer.treeSitter.column)
     }
 
     /// File paths still awaiting LSP indexing (`lsp_indexed = 0`), for the
@@ -211,7 +222,7 @@ public final class Store: Sendable {
     /// - Returns: The dirty file paths, in path order.
     /// - Throws: `CodeContextError.storage` if the query fails.
     public func drainLspDirty() async throws -> [String] {
-        try await drainDirty(column: Schema.IndexedFiles.lspIndexed)
+        try await drainDirty(column: IndexLayer.lsp.column)
     }
 
     /// File paths still awaiting embedding (`embedded = 0`), for the
@@ -220,7 +231,7 @@ public final class Store: Sendable {
     /// - Returns: The dirty file paths, in path order.
     /// - Throws: `CodeContextError.storage` if the query fails.
     public func drainEmbeddingDirty() async throws -> [String] {
-        try await drainDirty(column: Schema.IndexedFiles.embedded)
+        try await drainDirty(column: IndexLayer.embedding.column)
     }
 
     /// Runs the shared query behind `drainTsDirty()`, `drainLspDirty()`, and
