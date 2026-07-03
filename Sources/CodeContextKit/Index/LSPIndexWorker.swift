@@ -651,7 +651,7 @@ enum LSPIndexWorker<Connection: LanguageServerConnection> {
         let reextraction = try reextractSymbols(db: db, filePath: filePath, flatSymbols: flatSymbols)
         try writeCallEdges(db: db, filePath: filePath, pendingEdges: pendingEdges, symbolIDsByStartLine: reextraction.symbolIDsByStartLine)
         try applyInvalidation(db: db, affectedFiles: reextraction.affectedFiles)
-        try markIndexed(db: db, filePath: filePath)
+        try setLSPIndexed(db: db, filePath: filePath, indexed: true)
     }
 
     /// The result of `reextractSymbols(db:filePath:flatSymbols:)`: the
@@ -791,19 +791,10 @@ enum LSPIndexWorker<Connection: LanguageServerConnection> {
         }
     }
 
-    /// Flags `filePath` as `lsp_indexed = 1`.
-    /// - Parameters:
-    ///   - db: The write-transaction database connection.
-    ///   - filePath: The file to mark indexed.
-    /// - Throws: Rethrows any error `db`'s statement throws.
-    private static func markIndexed(db: Database, filePath: String) throws {
-        try setLSPIndexed(db: db, filePath: filePath, indexed: true)
-    }
-
     /// Sets `indexed_files.lsp_indexed` for `filePath`, shared by
     /// `applyInvalidation(db:affectedFiles:)` (clearing it) and
-    /// `markIndexed(db:filePath:)` (setting it) so the two don't each carry
-    /// their own copy of this single-column `UPDATE`.
+    /// `writeFile(db:filePath:flatSymbols:pendingEdges:)` (setting it) so the
+    /// two don't each carry their own copy of this single-column `UPDATE`.
     /// - Parameters:
     ///   - db: The write-transaction database connection.
     ///   - filePath: The file whose `lsp_indexed` flag to set.
