@@ -124,7 +124,12 @@ public enum Chunker {
 
     /// Separator joining qualified symbol path components, e.g.
     /// `Struct.method`.
-    private static let symbolPathSeparator = "."
+    ///
+    /// Not `private`: `SymbolOps` reuses this same separator when deriving
+    /// a leaf name from a qualified `symbol_path` and when building the
+    /// suffix-match pattern for `getSymbol`'s suffix tier, so the "." used
+    /// to build a path and the "." used to search it never drift apart.
+    static let symbolPathSeparator = "."
 
     /// Parses `file`'s content with `module`'s tree-sitter grammar and
     /// extracts one `SemanticChunk` per AST node whose kind is in

@@ -43,11 +43,15 @@ comments:
 
     Flipped all 4 checklist items to [x] on the task description with per-item resolution notes explaining why each was kept. Leaving task in `doing` per the implement workflow — no code diff to commit.
   timestamp: 2026-07-03T06:06:03.207515+00:00
+- actor: wballard
+  id: 01kwk9hg0a9qqgjvf7krbhs2hf
+  text: 'Implemented QueryAST (runtime S-expression query compilation via SwiftTreeSitter, reused Walker for gitignore-aware enumeration, reused/widened Chunker.extractTextAndRange for UTF-8 byte offsets), tested, checkpointed (368af53). 1 review/fix cycle: 4 "redundant init" findings investigated and proven false positives (structs are public; Swift doesn''t synthesize public memberwise inits) — verified empirically by deliberately breaking one and observing the build failure, then reverting. No code change needed (368af53→d03c20a documents the investigation only). Final review clean, moved doing → review → done.'
+  timestamp: 2026-07-03T06:09:32.682471+00:00
 depends_on:
 - 01KWJ3PSVZTXYZDX1ASZ3GN09M
 - 01KWJ3QTH53M16194BCTX6MKVP
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 8c80
 title: 'queryAST op: runtime S-expression queries'
 ---
 ## What

@@ -195,6 +195,29 @@ public final class Store: Sendable {
         }
     }
 
+    /// Resets `layer`'s flag to dirty (`false`) for every currently tracked
+    /// file, so the next `drainTsDirty()`/`drainLspDirty()`/
+    /// `drainEmbeddingDirty()` call for that layer picks up the whole
+    /// index.
+    ///
+    /// Unlike `markDirty(filePath:contentHash:fileSize:lastSeenAt:)` — which
+    /// dirties all three layers for one specific file, as part of
+    /// reconciling that file's changed content — this resets exactly one
+    /// layer's column, across every file, without touching the other two
+    /// layers or any file's `content_hash`/`file_size`. It is the bulk,
+    /// admin-triggered counterpart `IndexAdmin.rebuildIndex` uses instead of
+    /// duplicating layer-to-column knowledge outside `Store`.
+    ///
+    /// - Parameter layer: The layer to mark dirty for every file.
+    /// - Returns: The number of files updated — every row in
+    ///   `indexed_files`, since the `UPDATE` carries no `WHERE` clause.
+    public func markAllDirty(layer: IndexLayer) async throws -> Int {
+        try await write { db in
+            try db.execute(sql: "UPDATE \(Schema.IndexedFiles.table) SET \(layer.column) = 0")
+            return db.changesCount
+        }
+    }
+
     // MARK: - meta (embedder dimension)
 
     private static let embedderDimensionKey = "embedder_dimension"

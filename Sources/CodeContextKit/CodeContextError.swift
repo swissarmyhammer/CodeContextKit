@@ -37,6 +37,9 @@ public enum CodeContextError: Error, Sendable {
     /// Covers an unregistered language, a language with no tree-sitter
     /// grammar, and a query that failed to compile.
     case query(String)
+
+    /// A `grepCode` regular-expression pattern failed to compile.
+    case pattern(String)
 }
 
 extension CodeContextError: LocalizedError {
@@ -59,6 +62,8 @@ extension CodeContextError: LocalizedError {
             "embedding error: \(reason)"
         case let .query(reason):
             "query error: \(reason)"
+        case let .pattern(reason):
+            "pattern error: \(reason)"
         }
     }
 }
