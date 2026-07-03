@@ -82,6 +82,12 @@ actor FakeLanguageServerConnection: LanguageServerConnection {
         self.notificationContinuation = continuation
     }
 
+    /// Scripts the result `pullDiagnostics(for:)` returns (or throws) on its next call.
+    /// - Parameter result: The scripted outcome to install as `pullDiagnosticsResult`.
+    func setPullDiagnosticsResult(_ result: Result<[Diagnostic], Error>) {
+        pullDiagnosticsResult = result
+    }
+
     /// Pushes a server-initiated notification onto `serverNotifications`, simulating an
     /// unsolicited message like `textDocument/publishDiagnostics`.
     /// - Parameter notification: The notification to emit.

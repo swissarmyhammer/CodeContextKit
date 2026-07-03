@@ -34,11 +34,15 @@ comments:
 
     Leaving task in doing for review per /implement workflow.
   timestamp: 2026-07-03T03:26:26.020168+00:00
+- actor: wballard
+  id: 01kwk0fs8ndhpv499ja2qk53e3
+  text: 'Implemented generic Chunker (AST recursion driven by LanguageModule.chunkKinds/containerNodeKinds) + TreeSitterWorker (drain/parse/chunk/write cycle), tested, checkpointed (a095f9f). Confirmed the .method-vs-.function acceptance-criteria wording conflicts with the already-established data-driven design (Swift/Rust/Python grammars have no distinct method node kind) — review confirmed this is an acceptable documented divergence, not a defect. 1 review/fix cycle: extractText/makeChunk duplication (a095f9f→90e9de1). Final review clean, moved doing → review → done.'
+  timestamp: 2026-07-03T03:31:19.445035+00:00
 depends_on:
 - 01KWJ3QTH53M16194BCTX6MKVP
 - 01KWJ3PSVZTXYZDX1ASZ3GN09M
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '8980'
 title: Generic chunker and tree-sitter indexing worker
 ---
 ## What
