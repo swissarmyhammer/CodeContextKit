@@ -4,7 +4,7 @@ import Testing
 
 @testable import CodeContextKit
 
-/// Tests for `LspIndexWorker`: the drain → documentSymbol → call-hierarchy →
+/// Tests for `LSPIndexWorker`: the drain → documentSymbol → call-hierarchy →
 /// persist → mark-indexed cycle against a real on-disk `Store`, driven
 /// entirely through `FakeLanguageServerConnection` so no real subprocess or
 /// JSON is ever involved.
@@ -15,7 +15,7 @@ import Testing
 /// dependent files, a connection error mid-batch leaves the failing file
 /// dirty with no partial rows while the rest of the batch still proceeds,
 /// and idle/session-unavailable backoff is paced by an injectable clock.
-struct LspIndexWorkerTests {
+struct LSPIndexWorkerTests {
     // MARK: - Fixtures
 
     /// Builds a `DocumentSymbol` fixture with a `selectionRange` inside
@@ -40,7 +40,7 @@ struct LspIndexWorkerTests {
         )
     }
 
-    /// Builds the `DocumentURI` `LspIndexWorker` computes internally for a
+    /// Builds the `DocumentURI` `LSPIndexWorker` computes internally for a
     /// workspace-relative path, so a test can script a `CallHierarchyItem`'s
     /// `uri` to point at a specific fixture file.
     private static func uri(for relativePath: String, in root: URL) -> DocumentURI {
@@ -60,7 +60,7 @@ struct LspIndexWorkerTests {
     }
 
     /// Seeds `filePath`'s `indexed_files` row as fully dirty (all three
-    /// layers `0`), the state `LspIndexWorker` expects to find a file in
+    /// layers `0`), the state `LSPIndexWorker` expects to find a file in
     /// before draining it.
     private static func seedDirty(store: Store, filePath: String) async throws {
         try await store.markDirty(filePath: filePath, contentHash: Data(filePath.utf8), fileSize: 1)
@@ -86,7 +86,7 @@ struct LspIndexWorkerTests {
             await connection.setDocumentSymbolsResult(.success([structSymbol]))
 
             let session = LspSession(connection: connection, languageID: "swift")
-            let indexedCount = try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            let indexedCount = try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store,
                 rootDirectory: root,
                 extensions: ["swift"],
@@ -121,7 +121,7 @@ struct LspIndexWorkerTests {
             )
 
             let session = LspSession(connection: connection, languageID: "swift")
-            try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store,
                 rootDirectory: root,
                 extensions: ["swift"],
@@ -155,7 +155,7 @@ struct LspIndexWorkerTests {
             await connection.setDocumentSymbolsResult(
                 .success([Self.documentSymbol(name: "helper", kind: .function, startLine: 0, endLine: 0)])
             )
-            _ = try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            _ = try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store, rootDirectory: root, extensions: ["swift"], session: session
             )
 
@@ -175,7 +175,7 @@ struct LspIndexWorkerTests {
                 ),
             ]))
 
-            let indexedCount = try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            let indexedCount = try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store, rootDirectory: root, extensions: ["swift"], session: session
             )
             #expect(indexedCount == 1)
@@ -219,7 +219,7 @@ struct LspIndexWorkerTests {
                 Self.documentSymbol(name: "helper", kind: .function, startLine: 0, endLine: 0),
                 Self.documentSymbol(name: "other", kind: .function, startLine: 1, endLine: 1),
             ]))
-            _ = try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            _ = try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store, rootDirectory: root, extensions: ["swift"], session: session
             )
 
@@ -239,7 +239,7 @@ struct LspIndexWorkerTests {
                     fromRanges: [LSPRange(start: Position(line: 0, character: 17), end: Position(line: 0, character: 23))]
                 ),
             ]))
-            _ = try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            _ = try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store, rootDirectory: root, extensions: ["swift"], session: session
             )
 
@@ -267,7 +267,7 @@ struct LspIndexWorkerTests {
             ]))
             await connection.setPrepareCallHierarchyResult(.success([]))
             await connection.setOutgoingCallsResult(.success([]))
-            _ = try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            _ = try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store, rootDirectory: root, extensions: ["swift"], session: session
             )
 
@@ -303,7 +303,7 @@ struct LspIndexWorkerTests {
             await connection.setDocumentSymbolsResult(.failure(SimulatedConnectionFailure()))
 
             let session = LspSession(connection: connection, languageID: "swift")
-            let indexedCount = try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            let indexedCount = try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store, rootDirectory: root, extensions: ["swift"], session: session
             )
 
@@ -339,7 +339,7 @@ struct LspIndexWorkerTests {
             await connection.setDocumentSymbolsResult(.failure(SimulatedConnectionFailure()))
             let session = LspSession(connection: connection, languageID: "swift")
 
-            _ = try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            _ = try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store, rootDirectory: root, extensions: ["swift"], session: session
             )
             #expect(try await store.drainLspDirty() == ["A.swift"])
@@ -347,7 +347,7 @@ struct LspIndexWorkerTests {
             await connection.setDocumentSymbolsResult(
                 .success([Self.documentSymbol(name: "fromA", kind: .function, startLine: 0, endLine: 0)])
             )
-            let indexedCount = try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            let indexedCount = try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store, rootDirectory: root, extensions: ["swift"], session: session
             )
 
@@ -372,7 +372,7 @@ struct LspIndexWorkerTests {
             let connection = FakeLanguageServerConnection()
             let session = LspSession(connection: connection, languageID: "swift")
 
-            let indexedCount = try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            let indexedCount = try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store, rootDirectory: root, extensions: ["swift"], session: session
             )
 
@@ -395,7 +395,7 @@ struct LspIndexWorkerTests {
             let connection = FakeLanguageServerConnection()
             let session = LspSession(connection: connection, languageID: "swift")
 
-            let indexedCount = try await LspIndexWorker<FakeLanguageServerConnection>.drainBatch(
+            let indexedCount = try await LSPIndexWorker<FakeLanguageServerConnection>.drainBatch(
                 store: store, rootDirectory: root, extensions: ["swift"], session: session
             )
 
@@ -413,10 +413,10 @@ struct LspIndexWorkerTests {
             let connection = FakeLanguageServerConnection()
             let session = LspSession(connection: connection, languageID: "swift")
             let clock = ManualClock()
-            let configuration = LspIndexWorkerConfiguration()
+            let configuration = LSPIndexWorkerConfiguration()
 
             let runTask = Task {
-                try await LspIndexWorker<FakeLanguageServerConnection>.run(
+                try await LSPIndexWorker<FakeLanguageServerConnection>.run(
                     store: store,
                     rootDirectory: root,
                     extensions: ["swift"],
@@ -465,10 +465,10 @@ struct LspIndexWorkerTests {
 
             let sessionBox = SessionBox()
             let clock = ManualClock()
-            let configuration = LspIndexWorkerConfiguration()
+            let configuration = LSPIndexWorkerConfiguration()
 
             let runTask = Task {
-                try await LspIndexWorker<FakeLanguageServerConnection>.run(
+                try await LSPIndexWorker<FakeLanguageServerConnection>.run(
                     store: store,
                     rootDirectory: root,
                     extensions: ["swift"],
@@ -504,7 +504,7 @@ struct LspIndexWorkerTests {
 private struct SimulatedConnectionFailure: Error {}
 
 /// A settable box holding the current `LspSession`, used to script
-/// `LspIndexWorker.run`'s `sessionProvider` closure as "unavailable, then
+/// `LSPIndexWorker.run`'s `sessionProvider` closure as "unavailable, then
 /// available" without restarting the loop.
 private actor SessionBox {
     var current: LspSession<FakeLanguageServerConnection>?

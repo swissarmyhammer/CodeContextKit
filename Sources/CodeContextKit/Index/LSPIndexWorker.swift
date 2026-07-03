@@ -1,10 +1,10 @@
 import Foundation
 import GRDB
 
-/// Idle/backoff pacing knobs for `LspIndexWorker.run(store:rootDirectory:extensions:sessionProvider:configuration:clock:)`.
+/// Idle/backoff pacing knobs for `LSPIndexWorker.run(store:rootDirectory:extensions:sessionProvider:configuration:clock:)`.
 ///
 /// Port of `swissarmyhammer-code-context`'s `LspWorkerConfig`.
-struct LspIndexWorkerConfiguration: Sendable, Equatable {
+struct LSPIndexWorkerConfiguration: Sendable, Equatable {
     /// Maximum dirty files drained per batch before the drain loop re-queries.
     let batchSize: Int
 
@@ -71,7 +71,7 @@ struct LspIndexWorkerConfiguration: Sendable, Equatable {
 /// `TreeSitterWorker`'s established atomicity pattern: a process
 /// interrupted mid-drain never leaves a file's rows committed with its flag
 /// still `0`, or vice versa.
-enum LspIndexWorker<Connection: LanguageServerConnection> {
+enum LSPIndexWorker<Connection: LanguageServerConnection> {
     /// Maximum number of `?` bind parameters used in one dynamically-sized
     /// `IN (...)` clause, mirroring `swissarmyhammer-code-context::invalidation`'s
     /// `SQLITE_IN_CHUNK_SIZE` so a pathologically large symbol-deletion count
@@ -113,7 +113,7 @@ enum LspIndexWorker<Connection: LanguageServerConnection> {
     ///   - sessionProvider: Returns the current session for this server, or
     ///     `nil` if the daemon isn't running. Re-invoked before every batch.
     ///   - configuration: Batch size and idle/unavailable backoff pacing.
-    ///     Defaults to `LspIndexWorkerConfiguration()`.
+    ///     Defaults to `LSPIndexWorkerConfiguration()`.
     ///   - clock: The clock idle/unavailable sleeps wait against. Defaults
     ///     to `ContinuousClock()`; tests inject a `ManualClock`.
     /// - Throws: Rethrows `Store`'s storage errors, or `CancellationError`
@@ -123,7 +123,7 @@ enum LspIndexWorker<Connection: LanguageServerConnection> {
         rootDirectory: URL,
         extensions: [String],
         sessionProvider: @escaping @Sendable () async -> LspSession<Connection>?,
-        configuration: LspIndexWorkerConfiguration = LspIndexWorkerConfiguration(),
+        configuration: LSPIndexWorkerConfiguration = LSPIndexWorkerConfiguration(),
         clock: any Clock<Duration> = ContinuousClock()
     ) async throws {
         while !Task.isCancelled {
@@ -159,7 +159,7 @@ enum LspIndexWorker<Connection: LanguageServerConnection> {
     ///     are drained.
     ///   - session: The live session to index through.
     ///   - configuration: Supplies `batchSize`. Defaults to
-    ///     `LspIndexWorkerConfiguration()`.
+    ///     `LSPIndexWorkerConfiguration()`.
     /// - Returns: The number of dirty files successfully indexed and marked
     ///   `lsp_indexed = 1` this pass — excludes any file left dirty after a
     ///   connection error.
@@ -171,7 +171,7 @@ enum LspIndexWorker<Connection: LanguageServerConnection> {
         rootDirectory: URL,
         extensions: [String],
         session: LspSession<Connection>,
-        configuration: LspIndexWorkerConfiguration = LspIndexWorkerConfiguration()
+        configuration: LSPIndexWorkerConfiguration = LSPIndexWorkerConfiguration()
     ) async throws -> Int {
         let dirtyPaths = try await dirtyFiles(store: store, extensions: extensions, limit: configuration.batchSize)
 
@@ -787,7 +787,7 @@ enum LspIndexWorker<Connection: LanguageServerConnection> {
     /// - Throws: Rethrows any error `db`'s statements throw.
     private static func applyInvalidation(db: Database, affectedFiles: [String]) throws {
         for affectedFile in affectedFiles {
-            try setLspIndexed(db: db, filePath: affectedFile, indexed: false)
+            try setLSPIndexed(db: db, filePath: affectedFile, indexed: false)
         }
     }
 
@@ -797,7 +797,7 @@ enum LspIndexWorker<Connection: LanguageServerConnection> {
     ///   - filePath: The file to mark indexed.
     /// - Throws: Rethrows any error `db`'s statement throws.
     private static func markIndexed(db: Database, filePath: String) throws {
-        try setLspIndexed(db: db, filePath: filePath, indexed: true)
+        try setLSPIndexed(db: db, filePath: filePath, indexed: true)
     }
 
     /// Sets `indexed_files.lsp_indexed` for `filePath`, shared by
@@ -809,7 +809,7 @@ enum LspIndexWorker<Connection: LanguageServerConnection> {
     ///   - filePath: The file whose `lsp_indexed` flag to set.
     ///   - indexed: The new flag value.
     /// - Throws: Rethrows any error `db`'s statement throws.
-    private static func setLspIndexed(db: Database, filePath: String, indexed: Bool) throws {
+    private static func setLSPIndexed(db: Database, filePath: String, indexed: Bool) throws {
         try db.execute(
             sql: """
             UPDATE \(Schema.IndexedFiles.table) SET \(Schema.IndexedFiles.lspIndexed) = ? \
