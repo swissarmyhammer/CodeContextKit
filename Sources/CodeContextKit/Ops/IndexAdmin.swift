@@ -122,18 +122,24 @@ public enum IndexAdmin {
     public static func indexStatus(store: Store) async throws -> IndexStatus {
         try await store.read { db in
             let totalFiles = try count(db: db, whereClause: "")
-            let treeSitterIndexedFiles = try count(db: db, whereClause: "WHERE \(Schema.IndexedFiles.tsIndexed) = 1")
-            let lspIndexedFiles = try count(db: db, whereClause: "WHERE \(Schema.IndexedFiles.lspIndexed) = 1")
-            let embeddedFiles = try count(db: db, whereClause: "WHERE \(Schema.IndexedFiles.embedded) = 1")
+
+            // One loop over every layer instead of three copy-pasted count
+            // calls, reusing `IndexLayer.column` — the same mapping
+            // `markIndexed`/`markAllDirty` key off of in `Store` — rather
+            // than re-deriving each layer's column name here.
+            var indexedFiles: [IndexLayer: Int] = [:]
+            for layer in IndexLayer.allCases {
+                indexedFiles[layer] = try count(db: db, whereClause: "WHERE \(layer.column) = 1")
+            }
 
             return IndexStatus(
                 totalFiles: totalFiles,
-                treeSitterIndexedFiles: treeSitterIndexedFiles,
-                treeSitterIndexedPercent: percent(numerator: treeSitterIndexedFiles, denominator: totalFiles),
-                lspIndexedFiles: lspIndexedFiles,
-                lspIndexedPercent: percent(numerator: lspIndexedFiles, denominator: totalFiles),
-                embeddedFiles: embeddedFiles,
-                embeddedPercent: percent(numerator: embeddedFiles, denominator: totalFiles)
+                treeSitterIndexedFiles: indexedFiles[.treeSitter] ?? 0,
+                treeSitterIndexedPercent: percent(numerator: indexedFiles[.treeSitter] ?? 0, denominator: totalFiles),
+                lspIndexedFiles: indexedFiles[.lsp] ?? 0,
+                lspIndexedPercent: percent(numerator: indexedFiles[.lsp] ?? 0, denominator: totalFiles),
+                embeddedFiles: indexedFiles[.embedding] ?? 0,
+                embeddedPercent: percent(numerator: indexedFiles[.embedding] ?? 0, denominator: totalFiles)
             )
         }
     }
@@ -153,7 +159,7 @@ public enum IndexAdmin {
     @discardableResult
     public static func rebuildIndex(store: Store, layer: RebuildLayer) async throws -> RebuildIndexResult {
         var filesMarked = 0
-        for storeLayer in indexLayers(for: layer) {
+        for storeLayer in layerMapping[layer] ?? [] {
             // Every call's changesCount is the same total row count (the
             // underlying UPDATE carries no WHERE clause, so it always
             // touches every row) regardless of which column it resets;
@@ -170,11 +176,6 @@ public enum IndexAdmin {
         .embedding: [.embedding],
         .all: [.treeSitter, .lsp, .embedding],
     ]
-
-    /// Expands a `RebuildLayer` into the `Store.IndexLayer`(s) it resets.
-    private static func indexLayers(for layer: RebuildLayer) -> [IndexLayer] {
-        layerMapping[layer] ?? []
-    }
 
     /// Runs `SELECT COUNT(*) FROM indexed_files <whereClause>` and returns
     /// the count.

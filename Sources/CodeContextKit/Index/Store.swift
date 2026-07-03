@@ -6,9 +6,14 @@ import GRDB
 /// `markIndexed(filePath:layer:)` flips one of these flags to `true` when
 /// its worker finishes a file; `markDirty(filePath:...)` resets all three
 /// to `false` for a new or changed file.
-public enum IndexLayer: Sendable, Hashable {
+public enum IndexLayer: Sendable, Hashable, CaseIterable {
+    /// The tree-sitter parse layer (`ts_indexed`).
     case treeSitter
+
+    /// The LSP-derived symbol layer (`lsp_indexed`).
     case lsp
+
+    /// The embedding layer (`embedded`).
     case embedding
 
     /// Maps each layer onto its `indexed_files` dirty-flag column.
@@ -18,7 +23,10 @@ public enum IndexLayer: Sendable, Hashable {
         .embedding: Schema.IndexedFiles.embedded,
     ]
 
-    fileprivate var column: String {
+    /// This layer's `indexed_files` dirty-flag column name. Internal rather
+    /// than `private`/`fileprivate` so `IndexAdmin` can reuse it instead of
+    /// duplicating the layer-to-column mapping.
+    var column: String {
         Self.columnNames[self]!
     }
 }
@@ -55,6 +63,8 @@ public final class Store: Sendable {
     /// migrations synchronously, so the store is fully ready to use as
     /// soon as `init` returns.
     ///
+    /// - Parameter rootDirectory: The workspace root to open or create the
+    ///   store for.
     /// - Throws: `CodeContextError.storage` if the directory can't be
     ///   created, the database can't be opened, or migrations fail.
     public init(rootDirectory: URL) throws {
@@ -100,11 +110,22 @@ public final class Store: Sendable {
     /// Exposed as an escape hatch for subsystems (walker, tree-sitter/LSP
     /// workers, search) that need direct query access to tables this type
     /// doesn't otherwise wrap, beyond the dirty-flag helpers below.
+    ///
+    /// - Parameter block: The closure to execute against a read-only
+    ///   connection.
+    /// - Returns: The value returned by `block`.
+    /// - Throws: Rethrows any error thrown by `block`, or
+    ///   `CodeContextError.storage` if the database operation itself fails.
     public func read<T: Sendable>(_ block: @escaping @Sendable (Database) throws -> T) async throws -> T {
         try await withDbAccess(dbPool.read, block)
     }
 
     /// Runs `block` in a write transaction. See `read(_:)`.
+    ///
+    /// - Parameter block: The closure to execute in a write transaction.
+    /// - Returns: The value returned by `block`.
+    /// - Throws: Rethrows any error thrown by `block`, or
+    ///   `CodeContextError.storage` if the database operation itself fails.
     public func write<T: Sendable>(_ block: @escaping @Sendable (Database) throws -> T) async throws -> T {
         try await withDbAccess(dbPool.write, block)
     }
@@ -138,6 +159,16 @@ public final class Store: Sendable {
     /// (port of `startup_cleanup`'s "changed → mark all layers dirty, new
     /// → INSERT dirty"); deleted files instead get their row `DELETE`d,
     /// which cascades to their chunks/symbols/edges.
+    ///
+    /// - Parameters:
+    ///   - filePath: The file's workspace-relative path, the table's
+    ///     primary key.
+    ///   - contentHash: The file's current content hash, recorded for
+    ///     change detection on the next reconcile.
+    ///   - fileSize: The file's current size in bytes.
+    ///   - lastSeenAt: When the file was last observed by the walker;
+    ///     defaults to now.
+    /// - Throws: `CodeContextError.storage` if the upsert fails.
     public func markDirty(
         filePath: String,
         contentHash: Data,
@@ -167,22 +198,39 @@ public final class Store: Sendable {
 
     /// File paths still awaiting tree-sitter indexing (`ts_indexed = 0`),
     /// for the tree-sitter worker to drain.
+    ///
+    /// - Returns: The dirty file paths, in path order.
+    /// - Throws: `CodeContextError.storage` if the query fails.
     public func drainTsDirty() async throws -> [String] {
         try await drainDirty(column: Schema.IndexedFiles.tsIndexed)
     }
 
     /// File paths still awaiting LSP indexing (`lsp_indexed = 0`), for the
     /// LSP worker to drain.
+    ///
+    /// - Returns: The dirty file paths, in path order.
+    /// - Throws: `CodeContextError.storage` if the query fails.
     public func drainLspDirty() async throws -> [String] {
         try await drainDirty(column: Schema.IndexedFiles.lspIndexed)
     }
 
     /// File paths still awaiting embedding (`embedded = 0`), for the
     /// embedding worker to drain.
+    ///
+    /// - Returns: The dirty file paths, in path order.
+    /// - Throws: `CodeContextError.storage` if the query fails.
     public func drainEmbeddingDirty() async throws -> [String] {
         try await drainDirty(column: Schema.IndexedFiles.embedded)
     }
 
+    /// Runs the shared query behind `drainTsDirty()`, `drainLspDirty()`, and
+    /// `drainEmbeddingDirty()`, which differ only in which dirty-flag
+    /// `column` they check.
+    ///
+    /// - Parameter column: The `indexed_files` dirty-flag column to filter
+    ///   on (`= 0`).
+    /// - Returns: The dirty file paths, in path order.
+    /// - Throws: `CodeContextError.storage` if the query fails.
     private func drainDirty(column: String) async throws -> [String] {
         try await read { db in
             try String.fetchAll(
@@ -196,6 +244,11 @@ public final class Store: Sendable {
     }
 
     /// Marks `filePath` as done for `layer`, flipping its flag to `true`.
+    ///
+    /// - Parameters:
+    ///   - filePath: The file's workspace-relative path.
+    ///   - layer: Which layer's flag to flip.
+    /// - Throws: `CodeContextError.storage` if the update fails.
     public func markIndexed(filePath: String, layer: IndexLayer) async throws {
         try await write { db in
             try db.execute(
@@ -221,6 +274,7 @@ public final class Store: Sendable {
     /// - Parameter layer: The layer to mark dirty for every file.
     /// - Returns: The number of files updated — every row in
     ///   `indexed_files`, since the `UPDATE` carries no `WHERE` clause.
+    /// - Throws: `CodeContextError.storage` if the update fails.
     public func markAllDirty(layer: IndexLayer) async throws -> Int {
         try await write { db in
             try db.execute(sql: "UPDATE \(Schema.IndexedFiles.table) SET \(layer.column) = 0")
@@ -238,6 +292,9 @@ public final class Store: Sendable {
     /// Callers compare this against the current embedder's `dimension`; a
     /// mismatch means every chunk must be treated as un-embedded and
     /// re-embedded (see plan.md "Embeddings").
+    ///
+    /// - Returns: The recorded dimension, or `nil` if none has been set.
+    /// - Throws: `CodeContextError.storage` if the query fails.
     public func embedderDimension() async throws -> Int? {
         try await read { db in
             try String.fetchOne(
@@ -249,6 +306,9 @@ public final class Store: Sendable {
     }
 
     /// Records the embedder dimension currently in use.
+    ///
+    /// - Parameter dimension: The embedder dimension to record.
+    /// - Throws: `CodeContextError.storage` if the upsert fails.
     public func setEmbedderDimension(_ dimension: Int) async throws {
         try await write { db in
             try db.execute(
