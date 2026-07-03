@@ -6,18 +6,18 @@ import Foundation
 /// Ports `swissarmyhammer-lsp`'s `DaemonStatus`. `state` already carries the daemon's pid
 /// (`.running(pid:)`) and consecutive-failure count (`.failed(reason:attempts:)`), so this type
 /// adds no further fields beyond the command identifying which managed daemon the state belongs to.
-struct ServerStatus: Sendable, Equatable {
+public struct ServerStatus: Sendable, Equatable {
     /// The server executable this status describes, matching the owning daemon's `ServerSpec.command`.
-    let command: String
+    public let command: String
 
     /// The daemon's lifecycle state at the moment `status()` was called.
-    let state: LspDaemonState
+    public let state: LspDaemonState
 
     /// Creates a server status snapshot.
     /// - Parameters:
     ///   - command: The server executable this status describes.
     ///   - state: The daemon's lifecycle state at the moment of the snapshot.
-    init(command: String, state: LspDaemonState) {
+    public init(command: String, state: LspDaemonState) {
         self.command = command
         self.state = state
     }
