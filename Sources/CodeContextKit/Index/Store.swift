@@ -16,7 +16,7 @@ public enum IndexLayer: Sendable, Hashable {
     /// The embedding layer (`embedded`).
     case embedding
 
-    /// This layer's `indexed_files` dirty-flag column name. Internal rather
+    /// This layer's `indexed_files` dirty-flag column name, internal rather
     /// than `private`/`fileprivate` so `IndexAdmin` can reuse it instead of
     /// duplicating the layer-to-column mapping.
     ///
@@ -131,7 +131,7 @@ public final class Store: Sendable {
         try await withDbAccess(dbPool.read, block)
     }
 
-    /// Runs `block` in a write transaction. See `read(_:)`.
+    /// Runs `block` in a write transaction; see `read(_:)` for API details.
     ///
     /// - Parameter block: The closure to execute in a write transaction.
     /// - Returns: The value returned by `block`.

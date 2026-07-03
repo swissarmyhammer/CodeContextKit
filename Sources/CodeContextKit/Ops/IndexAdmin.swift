@@ -152,14 +152,13 @@ public enum IndexAdmin {
             // would keep computing a future layer's count while this
             // function still only reads back the three keys it knows about
             // — the extra count would be silently dropped when building
-            // `IndexStatus`, with nothing here to catch it. Reading each
-            // layer's column via `IndexLayer.<case>.column` still avoids
-            // duplicating the layer-to-column mapping (that lives in
-            // `IndexLayer.column`'s `switch`); only the three known counts
+            // `IndexStatus`, with nothing here to catch it. Each call still
+            // routes through `countIndexed(db:layer:)`, so the per-layer
+            // `WHERE` clause is written once; only the three known counts
             // this struct actually has fields for are computed.
-            let treeSitterIndexedFiles = try count(db: db, whereClause: "WHERE \(IndexLayer.treeSitter.column) = 1")
-            let lspIndexedFiles = try count(db: db, whereClause: "WHERE \(IndexLayer.lsp.column) = 1")
-            let embeddedFiles = try count(db: db, whereClause: "WHERE \(IndexLayer.embedding.column) = 1")
+            let treeSitterIndexedFiles = try countIndexed(db: db, layer: .treeSitter)
+            let lspIndexedFiles = try countIndexed(db: db, layer: .lsp)
+            let embeddedFiles = try countIndexed(db: db, layer: .embedding)
 
             return IndexStatus(
                 totalFiles: totalFiles,
@@ -202,6 +201,20 @@ public enum IndexAdmin {
     /// the count.
     private static func count(db: Database, whereClause: String) throws -> Int {
         try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM \(Schema.IndexedFiles.table) \(whereClause)") ?? 0
+    }
+
+    /// Counts the files with `layer`'s `indexed_files` flag set to `1`.
+    ///
+    /// Shared by `indexStatus()`'s three per-layer counts, which otherwise
+    /// differ only in which `IndexLayer` they pass.
+    ///
+    /// - Parameters:
+    ///   - db: The database connection to query.
+    ///   - layer: Which layer's indexed flag to count.
+    /// - Returns: The number of files with `layer`'s column set to `1`.
+    /// - Throws: Rethrows any error the underlying query throws.
+    private static func countIndexed(db: Database, layer: IndexLayer) throws -> Int {
+        try count(db: db, whereClause: "WHERE \(layer.column) = 1")
     }
 
     /// Computes `(numerator / denominator) * 100.0`, returning `0.0` when
