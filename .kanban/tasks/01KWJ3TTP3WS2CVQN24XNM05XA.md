@@ -36,6 +36,23 @@ comments:
 
     Still left in `doing` — ready for /review.
   timestamp: 2026-07-03T12:36:09.902055+00:00
+- actor: wballard
+  id: 01kwm0n9an57ahkv9bh64wr9xq
+  text: |-
+    Resolved all 3 review findings from the 2026-07-03 07:41 checklist:
+
+    1. Added `eventsForUppercaseExtensionsAreAccepted` to WatcherTests.swift — writes "Sample.RS", emits a .created FakeFileEventSource event, advances the manual clock past debounce, asserts `drainTsDirty() == ["Sample.RS"]`. Proves the `.lowercased()` case-insensitivity on both sides of the extension-set comparison in `acceptedRelativePath`/`allowedExtensions` init actually works (would fail if either `.lowercased()` call were removed).
+
+    2. Checked whether `fsEventsTrampoline`'s `clientCallBackInfo` parameter name is mandated by the C API: it isn't — `@convention(c)` function pointer types in Swift are structural (matched by parameter/return types only), so a function's own parameter names, even one implementing `FSEventStreamCallback`, are free local names with no ABI/type significance. Renamed to `clientCallbackInfo` (proper Swift camelCase) throughout: the declaration, the `guard let` unwrap, and the `Unmanaged.fromOpaque` call. No comment needed since it's not actually mirroring a constraint.
+
+    3. Renamed `modifiedEventReDirtiesAPreviouslyFullyIndexedFile` → `modifiedEventRedirtiesAPreviouslyFullyIndexedFile` in WatcherTests.swift.
+
+    Swept Watcher.swift for other case-sensitivity-adjacent logic and other C-API-mirroring parameter names per the task instructions: the extension filter is the only case-insensitive logic in the file (confirmed via grep for lowercased/uppercased/caseInsensitive — only the two call sites finding #1 already covers). `fsEventsTrampoline` is the only C-callback-shaped function in the file; its other parameters (`streamRef`, `numEvents`, `eventPaths`, `eventFlags`, `eventIds`) are already proper Swift camelCase and needed no change. `FSEventStreamContext`'s field names (`version`, `info`, `retain`, `release`, `copyDescription`) are the imported C struct's actual Swift member names (not a function's free parameter names), already correctly cased, and not renameable since they must match the struct's real members — no action needed there.
+
+    Verification: `swift build` clean (exit 0, zero warnings beyond the pre-existing unrelated mlx-swift_Cmlx.bundle warning). Full `swift test`: 281/281 pass. `swift test --filter WatcherTests` run 6 consecutive times (13/13 pass every run, ~0.95-1.3s each including the real FSEvents integration test), no flakes. Adversarial double-check agent (via really-done's gate) reviewed the diff independently and returned PASS with no findings.
+
+    Left in `doing` per /implement workflow — ready for /review.
+  timestamp: 2026-07-03T12:53:34.165326+00:00
 depends_on:
 - 01KWJ3QTH53M16194BCTX6MKVP
 - 01KWJ3S2AJFZPWWXRTKSQC3TW7
@@ -57,3 +74,9 @@ Create `Sources/CodeContextKit/Index/Watcher.swift` — replaces Rust's notify/a
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-07-03 07:41)
+
+- [x] `Sources/CodeContextKit/Index/Watcher.swift:244` — The new file extension filter implements case-insensitive matching by lowercasing both the allowed extensions set and the input (`url.pathExtension.lowercased()`), but test coverage only exercises lowercase extensions — no test verifies that uppercase extensions like `.RS` or `.TXT` are accepted. Add a test case that exercises an uppercase file extension to verify case-insensitive matching works, e.g., `"code.RS"` or `"notes.TXT"` in a new test like `eventsForUppercaseExtensionsAreAccepted`.
+- [x] `Sources/CodeContextKit/Index/Watcher.swift:268` — Parameter name `clientCallBackInfo` uses non-standard Swift camelCase with 'CallBack' (capital B) — should be `clientCallbackInfo` per Swift conventions. Rename to `clientCallbackInfo` to match Swift naming conventions. If matching the C API documentation is intentional, add a comment explaining this choice.
+- [x] `Tests/CodeContextKitTests/WatcherTests.swift:68` — Function name `modifiedEventReDirtiesAPreviouslyFullyIndexedFile` capitalizes the 're-' prefix as 'ReDirties' — should be 'redirties' per Swift camelCase conventions. Rename to `modifiedEventRedirtiesAPreviouslyFullyIndexedFile` with lowercase 're' prefix integrated into the word.

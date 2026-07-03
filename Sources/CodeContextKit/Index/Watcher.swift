@@ -483,16 +483,16 @@ private struct UnsafeFSEventStreamBox: @unchecked Sendable {
 /// order, to the registered handler on a new `Task`.
 private func fsEventsTrampoline(
     streamRef: ConstFSEventStreamRef,
-    clientCallBackInfo: UnsafeMutableRawPointer?,
+    clientCallbackInfo: UnsafeMutableRawPointer?,
     numEvents: Int,
     eventPaths: UnsafeMutableRawPointer,
     eventFlags: UnsafePointer<FSEventStreamEventFlags>,
     eventIds: UnsafePointer<FSEventStreamEventId>
 ) {
-    guard let clientCallBackInfo else {
+    guard let clientCallbackInfo else {
         return
     }
-    let box = Unmanaged<FSEventsHandlerBox>.fromOpaque(clientCallBackInfo).takeUnretainedValue()
+    let box = Unmanaged<FSEventsHandlerBox>.fromOpaque(clientCallbackInfo).takeUnretainedValue()
     guard let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] else {
         return
     }

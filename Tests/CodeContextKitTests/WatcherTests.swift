@@ -91,7 +91,7 @@ struct WatcherTests {
     }
 
     @Test
-    func modifiedEventReDirtiesAPreviouslyFullyIndexedFile() async throws {
+    func modifiedEventRedirtiesAPreviouslyFullyIndexedFile() async throws {
         try await withTemporaryWorkspace { root in
             let store = try Store(rootDirectory: root)
             try write("fn a() {}", to: "a.rs", in: root)
@@ -275,6 +275,24 @@ struct WatcherTests {
             await eventSource.emit(RawFileEvent(url: root.appendingPathComponent("notes.txt"), kind: .created))
 
             #expect(try await store.drainTsDirty().isEmpty)
+        }
+    }
+
+    @Test
+    func eventsForUppercaseExtensionsAreAccepted() async throws {
+        try await withTemporaryWorkspace { root in
+            let store = try Store(rootDirectory: root)
+            try write("fn a() {}", to: "Sample.RS", in: root)
+
+            let clock = ManualClock()
+            let (watcher, eventSource) = await Self.makeStartedWatcher(store: store, rootDirectory: root, clock: clock)
+
+            await eventSource.emit(RawFileEvent(url: root.appendingPathComponent("Sample.RS"), kind: .created))
+            await clock.waitForWaiter()
+            clock.advance(by: .seconds(1))
+            await watcher.waitForQuiescence()
+
+            #expect(try await store.drainTsDirty() == ["Sample.RS"])
         }
     }
 
