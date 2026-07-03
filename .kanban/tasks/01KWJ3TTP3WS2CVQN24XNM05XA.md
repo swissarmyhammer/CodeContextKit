@@ -53,11 +53,15 @@ comments:
 
     Left in `doing` per /implement workflow — ready for /review.
   timestamp: 2026-07-03T12:53:34.165326+00:00
+- actor: wballard
+  id: 01kwm15d89d9zr49b11tmjqc5h
+  text: 'Implemented Watcher actor (FSEvents-backed, reset-on-event debounce, kind-driven dispatch on flush, gitignore/.code-context/extension filtering) with a testable FileEventSource protocol, plus Store.deleteFile, tested against FakeFileEventSource+ManualClock and a real FSEvents integration test, checkpointed (2ddb39b). Found and fixed a real bug during implementation: contradictory event-kind/disk-existence logic that could wrongly cascade-delete a live file''s index row. 1 review/fix cycle: C-callback param naming, test naming, missing uppercase-extension test coverage (2ddb39b→cb1bcea). Stress-tested repeatedly with no flakiness. Final review clean, moved doing → review → done.'
+  timestamp: 2026-07-03T13:02:22.473002+00:00
 depends_on:
 - 01KWJ3QTH53M16194BCTX6MKVP
 - 01KWJ3S2AJFZPWWXRTKSQC3TW7
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: '9080'
 title: 'FSEvents watcher: debounced change pipeline'
 ---
 ## What

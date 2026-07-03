@@ -26,11 +26,29 @@ public enum Trigram {
     ///   trigram sets, `0.0` when either side yields no trigrams (too short
     ///   after canonicalization) or the sets are disjoint.
     public static func dice(query: String, target: String) -> Double {
-        let queryTrigrams = canonicalTrigramSet(text: query)
-        let targetTrigrams = canonicalTrigramSet(text: target)
-        guard !queryTrigrams.isEmpty, !targetTrigrams.isEmpty else { return 0.0 }
-        let intersectionCount = Double(queryTrigrams.intersection(targetTrigrams).count)
-        return 2.0 * intersectionCount / Double(queryTrigrams.count + targetTrigrams.count)
+        dice(querySet: canonicalTrigramSet(text: query), targetSet: canonicalTrigramSet(text: target))
+    }
+
+    /// Sørensen-Dice coefficient over two already-canonicalized trigram sets.
+    ///
+    /// The same `2·|A∩B| / (|A|+|B|)` formula as `dice(query:target:)`, for
+    /// callers that already hold both sides' `canonicalTrigramSet(text:)`
+    /// output — e.g. a per-chunk trigram set cached once and reused across
+    /// many queries, where recomputing the chunk's canonical form on every
+    /// query would repeat work that doesn't depend on the query at all.
+    /// `dice(query:target:)` is implemented in terms of this overload, so the
+    /// two can never drift apart.
+    ///
+    /// - Parameters:
+    ///   - querySet: The first canonical trigram set to compare.
+    ///   - targetSet: The second canonical trigram set to compare. Order is
+    ///     irrelevant.
+    /// - Returns: a similarity in `[0.0, 1.0]`; `1.0` for equal sets, `0.0`
+    ///   when either set is empty or the sets are disjoint.
+    public static func dice(querySet: Set<String>, targetSet: Set<String>) -> Double {
+        guard !querySet.isEmpty, !targetSet.isEmpty else { return 0.0 }
+        let intersectionCount = Double(querySet.intersection(targetSet).count)
+        return 2.0 * intersectionCount / Double(querySet.count + targetSet.count)
     }
 
     /// Canonicalize `text` (tokenize, re-join with spaces) and return its

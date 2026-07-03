@@ -42,6 +42,35 @@ public enum IndexLayer: Sendable, Hashable {
     }
 }
 
+/// Thread-safe monotonic write-generation counter for one `Store`.
+///
+/// A plain lock-guarded class rather than a stored `var` on `Store` itself:
+/// `Store` claims plain (non-`@unchecked`) `Sendable` conformance, which
+/// requires every one of its stored properties to be an immutable `let` of
+/// `Sendable` type — this type is the `let`-held box for the one piece of
+/// mutable state the generation counter needs. Matches the
+/// `PendingRequestTable`/`StderrTailBuffer` pattern in
+/// `ProcessLanguageServerConnection.swift`: `@unchecked Sendable` is safe
+/// here because every access goes through `lock`.
+private final class GenerationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    /// The counter's current value.
+    var current: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    /// Atomically increments the counter by one.
+    func bump() {
+        lock.lock()
+        defer { lock.unlock() }
+        value += 1
+    }
+}
+
 /// GRDB-backed SQLite store for one workspace's `.code-context/kit.db`.
 ///
 /// Owns the `DatabasePool`, runs schema migrations on open, and exposes the
@@ -64,6 +93,8 @@ public final class Store: Sendable {
     public let databaseURL: URL
 
     private let dbPool: DatabasePool
+
+    private let generationCounter = GenerationCounter()
 
     /// Opens (creating if necessary) the store for `rootDirectory`.
     ///
@@ -133,13 +164,35 @@ public final class Store: Sendable {
 
     /// Runs `block` in a write transaction; see `read(_:)` for API details.
     ///
+    /// A successful call also bumps `generation` by one — unconditionally,
+    /// not scoped to writes that touch `ts_chunks` specifically. A single
+    /// choke point here means every future write path (this file's or a
+    /// caller's own `store.write { ... }` block) automatically keeps
+    /// `generation` correct, with no risk of a new call site forgetting to
+    /// bump it; the cost is that `SearchCorpus` occasionally reloads its
+    /// cache after a write that didn't actually change `ts_chunks`, which is
+    /// cheap and safe compared to a missed invalidation.
+    ///
     /// - Parameter block: The closure to execute in a write transaction.
     /// - Returns: The value returned by `block`.
     /// - Throws: Rethrows any error thrown by `block`, or
     ///   `CodeContextError.storage` if the database operation itself fails.
     public func write<T: Sendable>(_ block: @escaping @Sendable (Database) throws -> T) async throws -> T {
-        try await withDbAccess(dbPool.write, block)
+        let result = try await withDbAccess(dbPool.write, block)
+        generationCounter.bump()
+        return result
     }
+
+    /// The store's current write generation.
+    ///
+    /// Starts at `0` and increases by one on every successful `write(_:)`
+    /// call (see that method's doc comment). Callers that cache data derived
+    /// from a `write(_:)`-guarded table — `SearchCorpus`'s chunk/embedding
+    /// matrix — record the generation their cache was built at and compare
+    /// it against this property on every use, reloading only when it has
+    /// advanced, so a just-finished write is picked up by the very next
+    /// read with no explicit invalidation call and no process restart.
+    public var generation: Int { generationCounter.current }
 
     /// Runs `block` via `dbPoolMethod` — `dbPool.read` or `dbPool.write`,
     /// which share this exact signature — translating any failure that
