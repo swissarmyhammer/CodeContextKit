@@ -15,7 +15,8 @@ public enum RebuildLayer: String, Codable, Sendable, Hashable, CaseIterable {
     /// Reset the LSP layer (`lsp_indexed`).
     case lsp
 
-    /// Reset the embedding layer (`embedded`).
+    /// Reset the embedding layer (`embedded` — no `_indexed` suffix, unlike
+    /// `ts_indexed`/`lsp_indexed`; see `Schema.IndexedFiles`).
     case embedding
 
     /// Reset every layer.
@@ -82,7 +83,8 @@ public struct IndexStatus: Codable, Sendable, Equatable {
     /// The LSP indexed percentage, `0.0` to `100.0`.
     public let lspIndexedPercent: Double
 
-    /// The number of files with `embedded = 1`.
+    /// The number of files with `embedded = 1` (no `_indexed` suffix on this
+    /// column, unlike `ts_indexed`/`lsp_indexed`; see `Schema.IndexedFiles`).
     public let embeddedIndexedFiles: Int
 
     /// The embedded indexed percentage, `0.0` to `100.0`.
