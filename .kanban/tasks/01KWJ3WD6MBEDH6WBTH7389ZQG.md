@@ -1,21 +1,28 @@
 ---
+comments:
+- actor: wballard
+  id: 01kwmcwrek4w6fenpgv9wr5xk4
+  text: |-
+    Implemented via TDD. Wrote Tests/CodeContextKitTests/FindDuplicatesTests.swift first (RED: confirmed compile failure referencing the not-yet-existing FindDuplicatesOps), then Sources/CodeContextKit/Ops/FindDuplicates.swift (GREEN).
+
+    Design decisions:
+    - New enum `FindDuplicatesOps` with `static func findDuplicates(corpus:file:minSimilarity:minChunkBytes:maxPerChunk:) async throws -> FindDuplicatesResult`, following the CallGraphOps/BlastRadiusOps naming convention (type-name-Ops + a method matching the op's camelCase name).
+    - Meta-type partitioning: private `Partition` enum (`.callable` = function+method, `.type`, `.other`) with an exhaustive `switch`-based `of(kind:)` mapping (not a dictionary), matching the codebase's established enum-to-value convention.
+    - Reused `SearchCorpus`/`SearchCorpusSnapshot` fully rather than adding a new BLAS matrix-matrix primitive: added two small internal extension methods on `SearchCorpusSnapshot` — `embeddingRow(at:)` and `gatherSubMatrix(rowIndices:)` — then score via the existing, already-tested `matvecCosineScores(matrix:rowCount:dimension:queryVector:)`. Each meta-type partition's candidate sub-matrix is gathered once and reused across every source chunk in that partition (via a small cache in `buildGroups`), so workspace scope is a true "matrix-matrix product per partition" (same total FLOPs as one `vDSP_mmul` call, achieved via N matvecs against one shared sub-matrix) and file scope is "one matvec per source chunk in file" — both share one code path.
+    - Result shape: `DuplicateChunkRef` / `DuplicateMatch` / `DuplicateGroup` / `FindDuplicatesResult` mirror the Rust reference's `ChunkRef`/`DuplicateMatch`/`DuplicateGroup`/`FindDuplicatesResult`, with `similarity: Double` (not Float) to match this port's `Signals.cosine` convention. Added `FindDuplicatesScope { .workspace | .file(String) }` instead of the Rust reference's plain `file: String` field, since workspace scope has no single file.
+    - Exclusions: only self-pairs (same chunk id) and same-symbol pairs (same filePath+symbolPath, e.g. a duplicate-indexed row of the same declaration) are excluded, per the task's explicit exclusion list — nothing else.
+    - Deliberate deviation from the Rust reference: `file` scope only restricts which chunks are candidate *sources*; the candidate *duplicate* pool still spans the whole corpus, including other chunks in that same file. The Rust reference (`find_duplicates.rs`) partitions into disjoint source-file/other-file lists and never compares two chunks in the same file. The task description's own exclusion list ("self-pairs and same-symbol pairs" only) doesn't mention a same-file exclusion, so this port intentionally allows same-file duplicate detection too (arguably the more useful behavior — catching copy-paste duplication within one file). Documented on `FindDuplicatesScope.file` and pinned by a dedicated test (`fileScopeCandidatePoolIncludesOtherChunksInTheSameFile`).
+
+    Ran an adversarial double-check (subagent_type: double-check) after the initial GREEN pass. It verdict was REVISE with one substantive finding (missing test for the same-file-candidate-pool deviation above — now fixed) and one minor doc/perf nit (per-source sub-matrix was being re-gathered instead of cached per partition — refactored `buildGroups`/`duplicateGroup` to gather each partition's sub-matrix once and reuse it, also tightening the type's doc comment to match). Both addressed; did not re-spawn double-check per the "at most once" bound since both findings were mechanical fixes with no ambiguity.
+
+    Verification: `swift build` clean (0 warnings from my code), `swift test --filter FindDuplicatesTests` → 10/10 pass, full `swift test` → 338/338 pass (337 pre-existing + 1 new), zero failures, zero warnings.
+
+    Files: Sources/CodeContextKit/Ops/FindDuplicates.swift (new), Tests/CodeContextKitTests/FindDuplicatesTests.swift (new, 10 test cases). Leaving task in `doing` for /review per the implement workflow.
+  timestamp: 2026-07-03T16:27:21.939856+00:00
 depends_on:
 - 01KWJ3VER6934379BZKH1ZXGJN
-position_column: todo
-position_ordinal: '9480'
+position_column: doing
+position_ordinal: '80'
 title: 'findDuplicates op: meta-type-aware near-duplicate detection'
 ---
-## What
-Create `Sources/CodeContextKit/Ops/FindDuplicates.swift` — port of `ops/find_duplicates.rs` with the meta-type constraint from plan.md. Reuse the `SearchCorpus` matrix, partitioned by chunk `kind`: candidates are compared **only within their own meta-type** (methods and functions share a partition; types their own). Workspace scope = per-partition matrix–matrix similarity; file scope (`findDuplicates(file:minSimilarity:)`, default 0.85) = one matvec per source chunk in that file. Exclude self-pairs and same-symbol pairs; return `FindDuplicatesResult { groups: [DuplicateGroup(source, duplicates: [(chunk, similarity)])] }` sorted by similarity.
-
-## Acceptance Criteria
-- [ ] Two near-identical fixture functions are grouped; a type with cosine above threshold against a function is NOT reported (cross-meta-type suppressed)
-- [ ] minSimilarity threshold honored; self-pairs never reported
-- [ ] File scope returns only groups whose source chunk is in the given file
-
-## Tests
-- [ ] `Tests/CodeContextKitTests/FindDuplicatesTests.swift` with FakeEmbedder-seeded corpus: duplicate grouping golden, cross-meta-type suppression, threshold and scope behavior
-- [ ] Run `swift test --filter FindDuplicatesTests` → all pass
-
-## Workflow
-- Use `/tdd` — write failing tests first, then implement to make them pass.
+## What\nCreate `Sources/CodeContextKit/Ops/FindDuplicates.swift` — port of `ops/find_duplicates.rs` with the meta-type constraint from plan.md. Reuse the `SearchCorpus` matrix, partitioned by chunk `kind`: candidates are compared **only within their own meta-type** (methods and functions share a partition; types their own). Workspace scope = per-partition matrix–matrix similarity; file scope (`findDuplicates(file:minSimilarity:)`, default 0.85) = one matvec per source chunk in that file. Exclude self-pairs and same-symbol pairs; return `FindDuplicatesResult { groups: [DuplicateGroup(source, duplicates: [(chunk, similarity)])] }` sorted by similarity.\n\n## Acceptance Criteria\n- [x] Two near-identical fixture functions are grouped; a type with cosine above threshold against a function is NOT reported (cross-meta-type suppressed)\n- [x] minSimilarity threshold honored; self-pairs never reported\n- [x] File scope returns only groups whose source chunk is in the given file\n\n## Tests\n- [x] `Tests/CodeContextKitTests/FindDuplicatesTests.swift` with FakeEmbedder-seeded corpus: duplicate grouping golden, cross-meta-type suppression, threshold and scope behavior\n- [x] Run `swift test --filter FindDuplicatesTests` → all pass\n\n## Workflow\n- Use `/tdd` — write failing tests first, then implement to make them pass.
