@@ -6,17 +6,20 @@ import GRDB
 /// `markIndexed(filePath:layer:)` flips one of these flags to `true` when
 /// its worker finishes a file; `markDirty(filePath:...)` resets all three
 /// to `false` for a new or changed file.
-public enum IndexLayer: Sendable {
+public enum IndexLayer: Sendable, Hashable {
     case treeSitter
     case lsp
     case embedding
 
+    /// Maps each layer onto its `indexed_files` dirty-flag column.
+    private static let columnNames: [IndexLayer: String] = [
+        .treeSitter: Schema.IndexedFiles.tsIndexed,
+        .lsp: Schema.IndexedFiles.lspIndexed,
+        .embedding: Schema.IndexedFiles.embedded,
+    ]
+
     fileprivate var column: String {
-        switch self {
-        case .treeSitter: Schema.IndexedFiles.tsIndexed
-        case .lsp: Schema.IndexedFiles.lspIndexed
-        case .embedding: Schema.IndexedFiles.embedded
-        }
+        Self.columnNames[self]!
     }
 }
 
@@ -98,19 +101,26 @@ public final class Store: Sendable {
     /// workers, search) that need direct query access to tables this type
     /// doesn't otherwise wrap, beyond the dirty-flag helpers below.
     public func read<T: Sendable>(_ block: @escaping @Sendable (Database) throws -> T) async throws -> T {
-        do {
-            return try await dbPool.read(block)
-        } catch let error as CodeContextError {
-            throw error
-        } catch {
-            throw CodeContextError.storage(error.localizedDescription)
-        }
+        try await withDbAccess(dbPool.read, block)
     }
 
     /// Runs `block` in a write transaction. See `read(_:)`.
     public func write<T: Sendable>(_ block: @escaping @Sendable (Database) throws -> T) async throws -> T {
+        try await withDbAccess(dbPool.write, block)
+    }
+
+    /// Runs `block` via `dbPoolMethod` — `dbPool.read` or `dbPool.write`,
+    /// which share this exact signature — translating any failure that
+    /// isn't already a `CodeContextError` into `CodeContextError.storage`.
+    ///
+    /// Shared by `read(_:)` and `write(_:)`, which are otherwise identical
+    /// and differ only in which `DatabasePool` method they hand off to.
+    private func withDbAccess<T: Sendable>(
+        _ dbPoolMethod: (@Sendable (Database) throws -> T) async throws -> T,
+        _ block: @escaping @Sendable (Database) throws -> T
+    ) async throws -> T {
         do {
-            return try await dbPool.write(block)
+            return try await dbPoolMethod(block)
         } catch let error as CodeContextError {
             throw error
         } catch {

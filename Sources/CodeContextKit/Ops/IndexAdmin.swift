@@ -8,7 +8,7 @@ import GRDB
 /// `Store.markIndexed(filePath:layer:)`/`markAllDirty(layer:)` always act on
 /// exactly one column at a time; `.all` exists only here, as a convenience
 /// this op expands into the underlying per-layer calls.
-public enum RebuildLayer: String, Codable, Sendable, Equatable, CaseIterable {
+public enum RebuildLayer: String, Codable, Sendable, Hashable, CaseIterable {
     /// Reset the tree-sitter layer (`ts_indexed`).
     case treeSitter = "treesitter"
 
@@ -163,18 +163,17 @@ public enum IndexAdmin {
         return RebuildIndexResult(layer: layer, filesMarked: filesMarked)
     }
 
+    /// Maps each `RebuildLayer` onto the `Store.IndexLayer`(s) it resets.
+    private static let layerMapping: [RebuildLayer: [IndexLayer]] = [
+        .treeSitter: [.treeSitter],
+        .lsp: [.lsp],
+        .embedding: [.embedding],
+        .all: [.treeSitter, .lsp, .embedding],
+    ]
+
     /// Expands a `RebuildLayer` into the `Store.IndexLayer`(s) it resets.
     private static func indexLayers(for layer: RebuildLayer) -> [IndexLayer] {
-        switch layer {
-        case .treeSitter:
-            [.treeSitter]
-        case .lsp:
-            [.lsp]
-        case .embedding:
-            [.embedding]
-        case .all:
-            [.treeSitter, .lsp, .embedding]
-        }
+        layerMapping[layer] ?? []
     }
 
     /// Runs `SELECT COUNT(*) FROM indexed_files <whereClause>` and returns

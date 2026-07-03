@@ -359,6 +359,14 @@ struct GrepCodeTests {
             #expect(result.matches.count == 1)
             #expect(result.matches.first?.filePath == "Sample.swift")
             #expect(result.totalChunksSearched == 1)
+
+            // Non-canonical casing ("Swift", not "swift") must still match
+            // the (lowercase) file extension — the filter is case-insensitive.
+            let uppercasedResult = try await GrepCode.run(store: store, pattern: "hello", languages: ["Swift"])
+
+            #expect(uppercasedResult.matches.count == 1)
+            #expect(uppercasedResult.matches.first?.filePath == "Sample.swift")
+            #expect(uppercasedResult.totalChunksSearched == 1)
         }
     }
 
