@@ -16,23 +16,27 @@ comments:
 
     Leaving task in `doing` per /implement workflow — ready for /review.
   timestamp: 2026-07-03T04:39:14.723771+00:00
+- actor: wballard
+  id: 01kwk5cb2t4xc8xbh42hj4hqb9
+  text: |-
+    Resolved both review findings in Sources/CodeContextKit/Index/TreeSitterWorker.swift:
+
+    1. `writeChunks` now resets `indexed_files.embedded = 0` for the rewritten file, in the same `store.write` transaction as the DELETE+INSERT of `ts_chunks`. Also folded the `ts_indexed = 1` flip into that same transaction (previously a separate `markIndexed` call in `run`), closing an equivalent latent split for the ts-indexed flag and making the file-level doc comment's existing claim ("only the DELETE+INSERT ... and its ts_indexed flag flip happen inside one Store.write block") actually true. `run`'s `else` branch (module unresolved/unreadable) still calls `store.markIndexed(layer: .treeSitter)` standalone, since writeChunks doesn't run in that case.
+
+    2. `embedChunks` now merges the per-chunk embedding `UPDATE`s and the `embedded = 1` flip into a single `store.write` transaction — closing the race outright rather than documenting around it, per the finding's stated preference. The empty-chunks vacuous-success path still uses the standalone `markIndexed` call (no companion write there, so no race).
+
+    Reviewed the rest of the file for the same pattern: `reconcileEmbedderDimension` already merges its two UPDATEs (chunk embedding NULL + embedded=0) into one transaction — no other split found.
+
+    TDD: added `rechunkingAnAlreadyEmbeddedFileResetsTheEmbeddedFlag` to EmbeddingSeamTests.swift. Watched it fail RED against the old code (`embeddedAfterRechunk == false` → actual `true`), then GREEN after the fix. Test forces `ts_indexed = 0` directly (bypassing `markDirty`, which would already reset `embedded` itself) to isolate `writeChunks`'s own responsibility for the flag.
+
+    Verification: `swift build` clean (0 warnings), `swift test` 203/203 passed across 14 suites (was 202 before the new test), including all pre-existing TreeSitterWorkerTests and EmbeddingSeamTests. Adversarial double-check agent independently re-ran the diff and the targeted test filters and returned PASS.
+
+    Both Review Findings checklist items flipped to [x]. Leaving in `doing` for /review per /implement workflow.
+  timestamp: 2026-07-03T04:56:49.498666+00:00
 depends_on:
 - 01KWJ3S2AJFZPWWXRTKSQC3TW7
 position_column: doing
 position_ordinal: '80'
 title: 'Embedding seam: TextEmbedding protocol, fake, RoutedEmbedder adapter, worker integration'
 ---
-## What
-Create `Sources/CodeContextKit/Embedding/TextEmbedding.swift` (`protocol TextEmbedding: Sendable { var dimension: Int; func embed(_ texts: [String]) async throws -> [[Float]] }`), `RoutedEmbedderAdapter.swift` (wraps FoundationModelsRouter's `RoutedEmbedder` — pure pass-through), and `Tests/.../Support/FakeEmbedder.swift` (deterministic hash-based L2-normalized vectors, configurable dimension). Integrate into the tree-sitter worker: batch-embed chunk texts after parsing, write via the store's embedding codec, set `embedded = 1` only when every chunk embedded; embedder absent/throwing → chunks persist with NULL embedding and `embedded = 0` (graceful skip). Record embedder dimension in the `meta` table; on mismatch with stored dimension, mark all chunks un-embedded for re-embedding.
-
-## Acceptance Criteria
-- [ ] Worker with FakeEmbedder produces normalized vectors of the configured dimension for every chunk
-- [ ] Worker with a throwing embedder still writes chunks (NULL embedding, embedded=0) and logs, no crash
-- [ ] Changing FakeEmbedder dimension between runs triggers full re-embed via the meta-table check
-
-## Tests
-- [ ] `Tests/CodeContextKitTests/EmbeddingSeamTests.swift`: happy path, graceful-skip path, dimension-change re-embed; FakeEmbedder determinism (same text → same vector)
-- [ ] Run `swift test --filter EmbeddingSeamTests` → all pass
-
-## Workflow
-- Use `/tdd` — write failing tests first, then implement to make them pass.
+## What\nCreate `Sources/CodeContextKit/Embedding/TextEmbedding.swift` (`protocol TextEmbedding: Sendable { var dimension: Int; func embed(_ texts: [String]) async throws -> [[Float]] }`), `RoutedEmbedderAdapter.swift` (wraps FoundationModelsRouter's `RoutedEmbedder` — pure pass-through), and `Tests/.../Support/FakeEmbedder.swift` (deterministic hash-based L2-normalized vectors, configurable dimension). Integrate into the tree-sitter worker: batch-embed chunk texts after parsing, write via the store's embedding codec, set `embedded = 1` only when every chunk embedded; embedder absent/throwing → chunks persist with NULL embedding and `embedded = 0` (graceful skip). Record embedder dimension in the `meta` table; on mismatch with stored dimension, mark all chunks un-embedded for re-embedding.\n\n## Acceptance Criteria\n- [ ] Worker with FakeEmbedder produces normalized vectors of the configured dimension for every chunk\n- [ ] Worker with a throwing embedder still writes chunks (NULL embedding, embedded=0) and logs, no crash\n- [ ] Changing FakeEmbedder dimension between runs triggers full re-embed via the meta-table check\n\n## Tests\n- [ ] `Tests/CodeContextKitTests/EmbeddingSeamTests.swift`: happy path, graceful-skip path, dimension-change re-embed; FakeEmbedder determinism (same text → same vector)\n- [ ] Run `swift test --filter EmbeddingSeamTests` → all pass\n\n## Workflow\n- Use `/tdd` — write failing tests first, then implement to make them pass.\n\n## Review Findings (2026-07-02 23:41)\n\n- [x] `Sources/CodeContextKit/Index/TreeSitterWorker.swift:114` — When chunks are rewritten with NULL embeddings during re-chunking, the `embedded` flag should be reset to 0 to maintain the invariant that 'NULL-embedding chunks have embedded=0', but `writeChunks` doesn't reset it. Newly re-chunked files won't be re-embedded on the next `embedDirtyChunks` call because `drainEmbeddingDirty()` only picks up files with `embedded=0`. Inside `writeChunks`'s `store.write` block, after the for loop that inserts chunks, add: `try db.execute(sql: \"UPDATE \\(Schema.IndexedFiles.table) SET \\(Schema.IndexedFiles.embedded) = 0 WHERE \\(Schema.IndexedFiles.filePath) = ?\", arguments: [filePath])` to reset the flag and ensure `embedDirtyChunks` re-embeds newly chunked files.\n- [x] `Sources/CodeContextKit/Index/TreeSitterWorker.swift:208-217` — `embedChunks` writes the chunk-embedding `UPDATE` and calls `markIndexed` as two separate `store.write` transactions, with no guard against concurrent same-file invocation. The safety invariant this relies on (`TreeSitterWorker.run` is only ever invoked sequentially) exists only in a kanban task comment, not in the source — verified by inspecting the file: no inline comment documents this limitation anywhere in `TreeSitterWorker.swift` or `Store.swift`'s `markIndexed`. A future caller that runs `TreeSitterWorker.run` concurrently (e.g. two workspaces sharing a store, or a future parallel-indexing caller) would silently reintroduce the race with no code-level signal warning them off it. This is not an acceptable silent tradeoff as currently landed — either merge the embedding `UPDATE` loop and the `embedded = 1` flip into one `store.write` transaction (removes the race outright), or, if kept as two transactions, add an inline doc comment on `embedChunks` (and/or `run`) stating the sequential-caller invariant it depends on, so the limitation is visible to future maintainers instead of living only in kanban history.\n

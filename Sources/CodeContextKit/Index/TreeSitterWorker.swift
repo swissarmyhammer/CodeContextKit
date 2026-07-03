@@ -52,9 +52,12 @@ public enum TreeSitterWorker {
 
         for relativePath in dirtyPaths {
             if let chunks = readAndChunk(relativePath: relativePath, rootDirectory: rootDirectory) {
+                // writeChunks marks the file tree-sitter-indexed itself, in
+                // the same transaction as the chunk rows it writes.
                 try await writeChunks(chunks: chunks, filePath: relativePath, store: store)
+            } else {
+                try await store.markIndexed(filePath: relativePath, layer: .treeSitter)
             }
-            try await store.markIndexed(filePath: relativePath, layer: .treeSitter)
         }
 
         if let embedder {
@@ -89,7 +92,16 @@ public enum TreeSitterWorker {
     /// Replaces `filePath`'s `ts_chunks` rows with `chunks`, in one write
     /// transaction: deletes the file's existing rows (so a re-chunked,
     /// changed file doesn't accumulate stale rows alongside the new ones),
-    /// then inserts each chunk with a `NULL` embedding.
+    /// inserts each chunk with a `NULL` embedding, marks the file
+    /// tree-sitter-indexed, and resets its `embedded` flag to 0.
+    ///
+    /// The `embedded` reset is required even though `Store.markDirty`
+    /// already zeroes it for the common (hash-changed) case: it keeps the
+    /// invariant "a chunk with a `NULL` embedding belongs to a file with
+    /// `embedded = 0`" true for any re-chunk, not just ones that went
+    /// through `markDirty` first, so a re-chunked file's freshly written,
+    /// unembedded chunks are always picked back up by the next
+    /// `drainEmbeddingDirty()` pass.
     private static func writeChunks(chunks: [SemanticChunk], filePath: String, store: Store) async throws {
         try await store.write { db in
             try db.execute(
@@ -112,6 +124,14 @@ public enum TreeSitterWorker {
                     ]
                 )
             }
+            try db.execute(
+                sql: """
+                UPDATE \(Schema.IndexedFiles.table) \
+                SET \(Schema.IndexedFiles.tsIndexed) = 1, \(Schema.IndexedFiles.embedded) = 0 \
+                WHERE \(Schema.IndexedFiles.filePath) = ?
+                """,
+                arguments: [filePath]
+            )
         }
     }
 
@@ -168,7 +188,12 @@ public enum TreeSitterWorker {
     /// `embedder`. Otherwise, `embedder.embed(_:)` throwing, or returning a
     /// vector count that doesn't match the chunk count, is logged and
     /// treated as a graceful skip — never a crash, and never a partial
-    /// write: a file's chunks are all embedded or none are.
+    /// write: a file's chunks are all embedded or none are. On success, the
+    /// per-chunk embedding `UPDATE`s and the file's `embedded = 1` flip run
+    /// inside one `Store.write` transaction, so there's no window in which
+    /// a chunk holds a non-`NULL` embedding while `embedded` is still 0 (or
+    /// vice versa) — including under concurrent invocation for the same
+    /// file.
     private static func embedChunks(forFilePath filePath: String, embedder: TextEmbedding, store: Store) async throws {
         let chunks: [EmbeddableChunk] = try await store.read { db in
             try Row.fetchAll(
@@ -212,9 +237,11 @@ public enum TreeSitterWorker {
                     arguments: [EmbeddingCodec.encode(vector), chunk.id]
                 )
             }
+            try db.execute(
+                sql: "UPDATE \(Schema.IndexedFiles.table) SET \(Schema.IndexedFiles.embedded) = 1 WHERE \(Schema.IndexedFiles.filePath) = ?",
+                arguments: [filePath]
+            )
         }
-
-        try await store.markIndexed(filePath: filePath, layer: .embedding)
     }
 }
 

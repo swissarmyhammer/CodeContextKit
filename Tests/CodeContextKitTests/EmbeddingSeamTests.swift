@@ -112,6 +112,37 @@ struct EmbeddingSeamTests {
     }
 
     @Test
+    func rechunkingAnAlreadyEmbeddedFileResetsTheEmbeddedFlag() async throws {
+        try await withTemporaryWorkspace { root in
+            let store = try Store(rootDirectory: root)
+            try write("func original() {}\n", to: "Sample.swift", in: root)
+            _ = try await Reconciler.reconcile(store: store, rootDirectory: root)
+            try await TreeSitterWorker.run(store: store, rootDirectory: root, embedder: FakeEmbedder(dimension: 8))
+
+            let embeddedBeforeRechunk: Bool = try await store.read { db in
+                try Bool.fetchOne(db, sql: "SELECT embedded FROM indexed_files WHERE file_path = ?", arguments: ["Sample.swift"]) ?? false
+            }
+            #expect(embeddedBeforeRechunk)
+
+            // Simulate a re-chunk trigger that dirties only the tree-sitter
+            // layer, bypassing `Store.markDirty` (which would already reset
+            // `embedded` itself). This isolates `writeChunks`'s own
+            // responsibility for keeping `embedded` consistent with the rows
+            // it rewrites, independent of how the file became ts-dirty.
+            try await store.write { db in
+                try db.execute(sql: "UPDATE indexed_files SET ts_indexed = 0 WHERE file_path = ?", arguments: ["Sample.swift"])
+            }
+
+            try await TreeSitterWorker.run(store: store, rootDirectory: root)
+
+            let embeddedAfterRechunk: Bool = try await store.read { db in
+                try Bool.fetchOne(db, sql: "SELECT embedded FROM indexed_files WHERE file_path = ?", arguments: ["Sample.swift"]) ?? true
+            }
+            #expect(embeddedAfterRechunk == false)
+        }
+    }
+
+    @Test
     func changingEmbedderDimensionBetweenRunsTriggersFullReembed() async throws {
         try await withTemporaryWorkspace { root in
             let store = try Store(rootDirectory: root)
