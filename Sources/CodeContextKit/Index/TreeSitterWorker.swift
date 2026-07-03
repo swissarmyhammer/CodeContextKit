@@ -2,15 +2,18 @@ import Foundation
 import GRDB
 
 /// Drains `ts_indexed = 0` files from a `Store`, parses and chunks each via
-/// `Chunker`, and writes the resulting `SemanticChunk`s into `ts_chunks`.
+/// `Chunker`, writes the resulting `SemanticChunk`s into `ts_chunks`, and
+/// extracts approximate call-graph edges via `TSCallGraph` into
+/// `lsp_call_edges`.
 ///
 /// Port of the tree-sitter portion of the Rust
 /// `index_discovered_files_with_embedder`
 /// (`swissarmyhammer-tools/src/mcp/tools/code_context/mod.rs`): chunk
-/// extraction and storage, plus an optional embedding step. Parsing (via
-/// `Chunker.chunk(file:module:)`) always runs outside any database
-/// transaction; only the `DELETE`+`INSERT` for a file's chunks and its
-/// `ts_indexed` flag flip happen inside one `Store.write` block.
+/// extraction and storage, call-graph edge extraction, plus an optional
+/// embedding step. Parsing (via `Chunker.chunk(file:module:)`) always runs
+/// outside any database transaction; only the `DELETE`+`INSERT` for a file's
+/// chunks, its `TSCallGraph`-derived call edges, and its `ts_indexed` flag
+/// flip happen inside one `Store.write` block.
 ///
 /// When `run(store:rootDirectory:embedder:)` is given an `embedder`, it also
 /// drains `embedded = 0` files — every file just (re)chunked above, plus any
@@ -51,10 +54,11 @@ public enum TreeSitterWorker {
         let dirtyPaths = try await store.drainTsDirty()
 
         for relativePath in dirtyPaths {
-            if let chunks = readAndChunk(relativePath: relativePath, rootDirectory: rootDirectory) {
+            if let parsed = readAndChunk(relativePath: relativePath, rootDirectory: rootDirectory) {
                 // writeChunks marks the file tree-sitter-indexed itself, in
-                // the same transaction as the chunk rows it writes.
-                try await writeChunks(chunks: chunks, filePath: relativePath, store: store)
+                // the same transaction as the chunk rows and call-graph
+                // edges it writes.
+                try await writeChunks(file: parsed.file, module: parsed.module, chunks: parsed.chunks, store: store)
             } else {
                 try await store.markIndexed(filePath: relativePath, layer: .treeSitter)
             }
@@ -67,12 +71,31 @@ public enum TreeSitterWorker {
         return dirtyPaths.count
     }
 
+    /// One dirty file's parsed content, ready for `writeChunks(file:module:chunks:store:)`.
+    ///
+    /// Bundles `readAndChunk(relativePath:rootDirectory:)`'s three results
+    /// together — `SourceFile`, `LanguageModule`, and the chunks parsed from
+    /// them — since `writeChunks(file:module:chunks:store:)` needs all three:
+    /// `chunks` for the `ts_chunks` rows, and `file`/`module` again for
+    /// `TSCallGraph.writeCallEdges(db:file:module:)`'s own independent parse
+    /// of the same source.
+    private struct ParsedFile {
+        /// The file that was read and chunked.
+        let file: SourceFile
+
+        /// The language module used to chunk `file`.
+        let module: any LanguageModule.Type
+
+        /// The chunks `Chunker.chunk(file:module:)` extracted from `file`.
+        let chunks: [SemanticChunk]
+    }
+
     /// Reads `relativePath`'s content from disk and chunks it with its
     /// registered `LanguageModule`, or `nil` if the language module can't be
     /// resolved or the file can't be read as UTF-8 text.
     ///
     /// Runs entirely outside any database transaction.
-    private static func readAndChunk(relativePath: String, rootDirectory: URL) -> [SemanticChunk]? {
+    private static func readAndChunk(relativePath: String, rootDirectory: URL) -> ParsedFile? {
         let fileExtension = URL(fileURLWithPath: relativePath).pathExtension
         guard let module = Languages.module(forFileExtension: fileExtension) else {
             Log.index.warning("no language module for \(relativePath, privacy: .public)")
@@ -86,14 +109,24 @@ public enum TreeSitterWorker {
         }
 
         let file = SourceFile(relativePath: relativePath, contents: contents)
-        return Chunker.chunk(file: file, module: module)
+        let chunks = Chunker.chunk(file: file, module: module)
+        return ParsedFile(file: file, module: module, chunks: chunks)
     }
 
-    /// Replaces `filePath`'s `ts_chunks` rows with `chunks`, in one write
-    /// transaction: deletes the file's existing rows (so a re-chunked,
-    /// changed file doesn't accumulate stale rows alongside the new ones),
-    /// inserts each chunk with a `NULL` embedding, marks the file
+    /// Replaces `file`'s `ts_chunks` rows with `chunks` and its
+    /// tree-sitter-sourced `lsp_call_edges` rows with `TSCallGraph`'s
+    /// heuristic edges, in one write transaction: deletes the file's
+    /// existing `ts_chunks` rows (so a re-chunked, changed file doesn't
+    /// accumulate stale rows alongside the new ones), inserts each chunk
+    /// with a `NULL` embedding, extracts and replaces call-graph edges via
+    /// `TSCallGraph.writeCallEdges(db:file:module:)`, marks the file
     /// tree-sitter-indexed, and resets its `embedded` flag to 0.
+    ///
+    /// Call-graph edge extraction runs in the same transaction as the chunk
+    /// write (rather than as a separate `store.write` call afterward) so a
+    /// process interrupted mid-drain never leaves a file's chunks committed
+    /// with its edges still stale, or its `ts_indexed` flag flipped before
+    /// either write lands.
     ///
     /// The `embedded` reset is required even though `Store.markDirty`
     /// already zeroes it for the common (hash-changed) case: it keeps the
@@ -102,11 +135,16 @@ public enum TreeSitterWorker {
     /// through `markDirty` first, so a re-chunked file's freshly written,
     /// unembedded chunks are always picked back up by the next
     /// `drainEmbeddingDirty()` pass.
-    private static func writeChunks(chunks: [SemanticChunk], filePath: String, store: Store) async throws {
+    private static func writeChunks(
+        file: SourceFile,
+        module: any LanguageModule.Type,
+        chunks: [SemanticChunk],
+        store: Store
+    ) async throws {
         try await store.write { db in
             try db.execute(
                 sql: "DELETE FROM \(Schema.TsChunks.table) WHERE \(Schema.TsChunks.filePath) = ?",
-                arguments: [filePath]
+                arguments: [file.relativePath]
             )
             for chunk in chunks {
                 try db.execute(
@@ -124,13 +162,16 @@ public enum TreeSitterWorker {
                     ]
                 )
             }
+
+            try TSCallGraph.writeCallEdges(db: db, file: file, module: module)
+
             try db.execute(
                 sql: """
                 UPDATE \(Schema.IndexedFiles.table) \
                 SET \(Schema.IndexedFiles.tsIndexed) = 1, \(Schema.IndexedFiles.embedded) = 0 \
                 WHERE \(Schema.IndexedFiles.filePath) = ?
                 """,
-                arguments: [filePath]
+                arguments: [file.relativePath]
             )
         }
     }

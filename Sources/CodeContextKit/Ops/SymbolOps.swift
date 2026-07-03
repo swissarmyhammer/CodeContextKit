@@ -318,6 +318,14 @@ public enum SymbolOps {
     /// Shared by candidate enrichment (`loadCandidateRows`) and
     /// `searchSymbol`'s meta-type filter, so there is exactly one mapping
     /// from an LSP kind name to the four-bucket `SymbolMetaType` scheme.
+    ///
+    /// Also covers `TSCallGraph`'s synthetic `lsp_symbols` rows: those store
+    /// a `ts_chunks.kind` value (a `SymbolMetaType.rawValue` — `"function"`,
+    /// `"method"`, `"type"`, or `"other"`) directly as `kind` rather than a
+    /// real LSP kind name, so this table's `"type"`/`"other"` entries exist
+    /// purely for that case — no real language server reports either
+    /// literal string as a `SymbolKind` name, so they can't collide with a
+    /// genuine LSP-sourced row.
     private static let lspKindMetaTypes: [String: SymbolMetaType] = [
         "function": .function,
         "method": .method,
@@ -328,6 +336,8 @@ public enum SymbolOps {
         "enum": .type,
         "namespace": .type,
         "module": .type,
+        "type": .type,
+        "other": .other,
     ]
 
     // MARK: - getSymbol
@@ -767,7 +777,12 @@ public enum SymbolOps {
 
     /// Extracts the leaf segment of a qualified path (e.g. `Struct.method`
     /// -> `method`), split on `Chunker.symbolPathSeparator`.
-    private static func leafName(ofQualifiedPath qualifiedPath: String) -> String {
+    ///
+    /// Not `private`: `TSCallGraph` reuses this same leaf-name extraction to
+    /// derive the `name` column of the synthetic `lsp_symbols` rows it
+    /// creates for tree-sitter-only call-graph edges, so the two don't each
+    /// carry their own copy of the qualified-path-to-leaf-name logic.
+    static func leafName(ofQualifiedPath qualifiedPath: String) -> String {
         qualifiedPath.components(separatedBy: Chunker.symbolPathSeparator).last ?? qualifiedPath
     }
 }

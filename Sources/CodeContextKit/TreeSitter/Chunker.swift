@@ -331,9 +331,10 @@ public enum Chunker {
     /// math.
     ///
     /// Not `private`: `QueryAST` reuses this same UTF-16-NSRange-to-UTF-8
-    /// conversion for its captures' text and byte offsets, so the two
-    /// tree-sitter consumers in this module don't each carry their own copy
-    /// of the conversion.
+    /// conversion for its captures' text and byte offsets, and `TSCallGraph`
+    /// reuses it for a call site's own range and its callee sub-node's text,
+    /// so the three tree-sitter consumers in this module don't each carry
+    /// their own copy of the conversion.
     internal static func extractTextAndRange(
         of node: Node,
         in source: String
