@@ -112,6 +112,36 @@ actor FakeLanguageServerConnection: LanguageServerConnection {
         outgoingCallsResult = result
     }
 
+    /// Scripts the result `definition(in:at:)` returns (or throws) on its next call.
+    /// - Parameter result: The scripted outcome to install as `definitionResult`.
+    func setDefinitionResult(_ result: Result<[Location], Error>) {
+        definitionResult = result
+    }
+
+    /// Scripts the result `typeDefinition(in:at:)` returns (or throws) on its next call.
+    /// - Parameter result: The scripted outcome to install as `typeDefinitionResult`.
+    func setTypeDefinitionResult(_ result: Result<[Location], Error>) {
+        typeDefinitionResult = result
+    }
+
+    /// Scripts the result `hover(in:at:)` returns (or throws) on its next call.
+    /// - Parameter result: The scripted outcome to install as `hoverResult`.
+    func setHoverResult(_ result: Result<Hover?, Error>) {
+        hoverResult = result
+    }
+
+    /// Scripts the result `references(in:at:includeDeclaration:)` returns (or throws) on its next call.
+    /// - Parameter result: The scripted outcome to install as `referencesResult`.
+    func setReferencesResult(_ result: Result<[Location], Error>) {
+        referencesResult = result
+    }
+
+    /// Scripts the result `implementations(in:at:)` returns (or throws) on its next call.
+    /// - Parameter result: The scripted outcome to install as `implementationsResult`.
+    func setImplementationsResult(_ result: Result<[Location], Error>) {
+        implementationsResult = result
+    }
+
     /// Pushes a server-initiated notification onto `serverNotifications`, simulating an
     /// unsolicited message like `textDocument/publishDiagnostics`.
     /// - Parameter notification: The notification to emit.

@@ -216,6 +216,79 @@ actor LspSession<Connection: LanguageServerConnection> {
         try await connection.outgoingCalls(of: item)
     }
 
+    /// Requests the definition site of the symbol at a position, delegating
+    /// directly to `connection.definition(in:at:)`.
+    ///
+    /// - Parameters:
+    ///   - uri: The document containing the cursor position; should already
+    ///     be synced via `syncOpen(uri:text:)` so the server sees its
+    ///     current content.
+    ///   - position: The cursor position to query.
+    /// - Returns: Zero or more definition locations.
+    /// - Throws: Whatever `connection.definition(in:at:)` throws.
+    func definition(uri: DocumentURI, at position: Position) async throws -> [Location] {
+        try await connection.definition(in: uri, at: position)
+    }
+
+    /// Requests the type-definition site of the symbol at a position,
+    /// delegating directly to `connection.typeDefinition(in:at:)`.
+    ///
+    /// - Parameters:
+    ///   - uri: The document containing the cursor position; should already
+    ///     be synced via `syncOpen(uri:text:)` so the server sees its
+    ///     current content.
+    ///   - position: The cursor position to query.
+    /// - Returns: Zero or more type-definition locations.
+    /// - Throws: Whatever `connection.typeDefinition(in:at:)` throws.
+    func typeDefinition(uri: DocumentURI, at position: Position) async throws -> [Location] {
+        try await connection.typeDefinition(in: uri, at: position)
+    }
+
+    /// Requests hover information for the symbol at a position, delegating
+    /// directly to `connection.hover(in:at:)`.
+    ///
+    /// - Parameters:
+    ///   - uri: The document containing the cursor position; should already
+    ///     be synced via `syncOpen(uri:text:)` so the server sees its
+    ///     current content.
+    ///   - position: The cursor position to query.
+    /// - Returns: The hover contents, or `nil` if the server has nothing to
+    ///   show.
+    /// - Throws: Whatever `connection.hover(in:at:)` throws.
+    func hover(uri: DocumentURI, at position: Position) async throws -> Hover? {
+        try await connection.hover(in: uri, at: position)
+    }
+
+    /// Requests every reference to the symbol at a position, delegating
+    /// directly to `connection.references(in:at:includeDeclaration:)`.
+    ///
+    /// - Parameters:
+    ///   - uri: The document containing the cursor position; should already
+    ///     be synced via `syncOpen(uri:text:)` so the server sees its
+    ///     current content.
+    ///   - position: The cursor position to query.
+    ///   - includeDeclaration: Whether the declaration site itself should be
+    ///     included.
+    /// - Returns: Zero or more reference locations.
+    /// - Throws: Whatever `connection.references(in:at:includeDeclaration:)` throws.
+    func references(uri: DocumentURI, at position: Position, includeDeclaration: Bool) async throws -> [Location] {
+        try await connection.references(in: uri, at: position, includeDeclaration: includeDeclaration)
+    }
+
+    /// Requests every implementation of the symbol at a position, delegating
+    /// directly to `connection.implementations(in:at:)`.
+    ///
+    /// - Parameters:
+    ///   - uri: The document containing the cursor position; should already
+    ///     be synced via `syncOpen(uri:text:)` so the server sees its
+    ///     current content.
+    ///   - position: The cursor position to query.
+    /// - Returns: Zero or more implementation locations.
+    /// - Throws: Whatever `connection.implementations(in:at:)` throws.
+    func implementations(uri: DocumentURI, at position: Position) async throws -> [Location] {
+        try await connection.implementations(in: uri, at: position)
+    }
+
     /// Notifies the server that a document was closed, then forgets it from
     /// the open-document set.
     ///
