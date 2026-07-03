@@ -88,6 +88,12 @@ actor FakeLanguageServerConnection: LanguageServerConnection {
         pullDiagnosticsResult = result
     }
 
+    /// Scripts the result `initialize(rootURI:)` returns (or throws) on its next call.
+    /// - Parameter result: The scripted outcome to install as `initializeResult`.
+    func setInitializeResult(to result: Result<Void, Error>) {
+        initializeResult = result
+    }
+
     /// Pushes a server-initiated notification onto `serverNotifications`, simulating an
     /// unsolicited message like `textDocument/publishDiagnostics`.
     /// - Parameter notification: The notification to emit.

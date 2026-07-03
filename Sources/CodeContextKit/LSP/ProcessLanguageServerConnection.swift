@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Thread-safe table of in-flight JSON-RPC requests, keyed by request id.
@@ -56,6 +57,43 @@ private final class PendingRequestTable: @unchecked Sendable {
     }
 }
 
+/// Thread-safe bounded tail of a child process's stderr output.
+///
+/// Fed from `runStderrDrainLoop`, which already reads stderr chunks outside actor isolation to
+/// log them at `.debug`; this buffer captures the same chunks so `LspDaemon` can enrich a
+/// handshake-failure error with whatever the server printed before it died. A plain
+/// `NSLock`-guarded class rather than actor state, matching `PendingRequestTable` above: it must
+/// be readable from `recentStderrTail()` without an actor hop, since callers building an error
+/// message often can't `await` (e.g. from inside a `catch` that's already off the actor).
+/// `@unchecked Sendable` is safe because every access goes through `lock`.
+private final class StderrTailBuffer: @unchecked Sendable {
+    /// The number of most-recent chunks retained; older chunks are dropped.
+    private static let maxChunks = 20
+
+    private let lock = NSLock()
+    private var chunks: [String] = []
+
+    /// Appends one stderr chunk, evicting the oldest chunk if the buffer is now over capacity.
+    /// - Parameter chunk: The raw text read from the child process's stderr.
+    func append(chunk: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        chunks.append(chunk)
+        if chunks.count > Self.maxChunks {
+            chunks.removeFirst(chunks.count - Self.maxChunks)
+        }
+    }
+
+    /// A snapshot of every retained chunk, oldest first.
+    /// - Returns: The retained stderr chunks joined together, or an empty string if none have
+    ///   been captured yet.
+    func snapshot() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return chunks.joined()
+    }
+}
+
 /// A `LanguageServerConnection` backed by a real language-server child
 /// process, talking `Content-Length`-framed JSON-RPC over its stdio.
 ///
@@ -72,12 +110,17 @@ actor ProcessLanguageServerConnection: LanguageServerConnection {
     private let stdoutHandle: FileHandle
     private let stderrHandle: FileHandle
     private nonisolated let pendingRequests = PendingRequestTable()
+    private nonisolated let stderrTailBuffer = StderrTailBuffer()
     private let requestTimeout: Duration
     private let clock: any Clock<Duration>
     private var nextRequestID = 0
     private var readerTask: Task<Void, Never>?
     private var stderrTask: Task<Void, Never>?
     private var isClosed = false
+
+    /// The spawned child process's id, captured once at launch (a process's id never changes
+    /// after `run()` succeeds, so this is safe to expose without an actor hop).
+    nonisolated let pid: Int32
 
     private let notificationContinuation: AsyncStream<ServerNotification>.Continuation
 
@@ -120,6 +163,7 @@ actor ProcessLanguageServerConnection: LanguageServerConnection {
         }
 
         self.process = process
+        self.pid = process.processIdentifier
         self.stdinHandle = stdinPipe.fileHandleForWriting
         self.stdoutHandle = stdoutPipe.fileHandleForReading
         self.stderrHandle = stderrPipe.fileHandleForReading
@@ -130,27 +174,39 @@ actor ProcessLanguageServerConnection: LanguageServerConnection {
         self.serverNotifications = notificationStream
         self.notificationContinuation = continuation
 
+        // Captured once, here, while the handles are definitely still open: `readChunk(from:)`
+        // operates on these raw descriptors rather than the `FileHandle` objects themselves, so
+        // the detached loops below never touch a `FileHandle` concurrently with `close()` (see
+        // `readChunk(from:)`'s doc comment for why that matters).
         let pendingRequests = self.pendingRequests
-        let stdoutHandle = self.stdoutHandle
+        let stdoutFileDescriptor = self.stdoutHandle.fileDescriptor
         self.readerTask = Task.detached {
-            Self.runReaderLoop(stdoutHandle: stdoutHandle, pendingRequests: pendingRequests, notificationContinuation: continuation)
+            Self.runReaderLoop(stdoutFileDescriptor: stdoutFileDescriptor, pendingRequests: pendingRequests, notificationContinuation: continuation)
         }
 
-        let stderrHandle = self.stderrHandle
+        let stderrFileDescriptor = self.stderrHandle.fileDescriptor
+        let stderrTailBuffer = self.stderrTailBuffer
         self.stderrTask = Task.detached {
-            Self.runStderrDrainLoop(stderrHandle: stderrHandle)
+            Self.runStderrDrainLoop(stderrFileDescriptor: stderrFileDescriptor, tailBuffer: stderrTailBuffer)
         }
     }
 
     /// Terminates the child process and releases every resource this connection owns.
     ///
-    /// Closes all three pipes — which is what actually stops the reader/stderr loops: they read
-    /// via blocking `FileHandle.availableData` outside actor isolation, so `Task.cancel()` alone
-    /// can't interrupt them; closing the handles makes `availableData` return empty (EOF), which
-    /// is the loops' own exit condition. `readerTask`/`stderrTask` are still cancelled first, so
-    /// any already-EOF'd loop doesn't linger as a live (if inert) task. Fails every still-pending
-    /// request with `CodeContextError.notRunning` and finishes `serverNotifications`. Safe to call
-    /// more than once.
+    /// Unconditionally `SIGKILL`s a still-running process rather than sending `SIGTERM` via
+    /// `Process.terminate()`: this mirrors `swissarmyhammer-lsp`'s `kill_on_drop(true)`/
+    /// `child.kill()` guarantee that a process this connection owns is reaped, not merely asked
+    /// to leave — a server that traps or ignores `SIGTERM` would otherwise survive `close()`
+    /// indefinitely. Any "ask nicely first" grace period is the caller's responsibility (the
+    /// JSON-RPC `shutdown`/`exit` dance plus the grace-period wait `LspDaemon.shutdown()`
+    /// performs before ever reaching this call), not this method's. Once the process actually
+    /// exits, its write end of the stdout/stderr pipes closes, which is what stops the reader and
+    /// stderr-drain loops: they read via a blocking raw `read(2)` call outside actor isolation,
+    /// so `Task.cancel()` alone can't interrupt them, and that `read(2)` call returning `0`
+    /// (EOF) is `readChunk(from:)`'s own loop-exit condition. `readerTask`/`stderrTask` are still
+    /// cancelled here too, so an already-finished loop doesn't linger as a live (if inert) task.
+    /// Fails every still-pending request with `CodeContextError.notRunning` and finishes
+    /// `serverNotifications`. Safe to call more than once.
     func close() {
         guard !isClosed else { return }
         isClosed = true
@@ -159,7 +215,7 @@ actor ProcessLanguageServerConnection: LanguageServerConnection {
         stderrTask?.cancel()
 
         if process.isRunning {
-            process.terminate()
+            kill(process.processIdentifier, SIGKILL)
         }
 
         try? stdinHandle.close()
@@ -168,6 +224,38 @@ actor ProcessLanguageServerConnection: LanguageServerConnection {
 
         pendingRequests.failAll(with: CodeContextError.notRunning)
         notificationContinuation.finish()
+    }
+
+    // MARK: - Process-level hooks for LspDaemon
+
+    /// Reports whether the child process is still running.
+    ///
+    /// Backs the `isAlive` hook `LspDaemon.processConnectionFactory()` bundles into a
+    /// `ConnectionHandle`, so the daemon's `healthCheck()` can detect an unexpected exit.
+    /// - Returns: `true` if the process has not exited; `false` once it has.
+    func isRunning() -> Bool {
+        process.isRunning
+    }
+
+    /// Suspends until the child process exits, returning immediately if it already has.
+    ///
+    /// Waits on `readerTask` rather than polling `process.isRunning`: the reader loop's own exit
+    /// condition is stdout EOF, which is exactly the child process's exit signal, so this reuses
+    /// the exit-detection `ProcessLanguageServerConnection` already performs to fail pending
+    /// requests on process death instead of introducing a second detection path.
+    func waitUntilExit() async {
+        await readerTask?.value
+    }
+
+    /// A best-effort tail of the child process's recent stderr output.
+    ///
+    /// Backs the `stderrTail` hook `LspDaemon.processConnectionFactory()` bundles into a
+    /// `ConnectionHandle`, so a handshake-failure error can be enriched with whatever the server
+    /// printed before it died.
+    /// - Returns: The most recently captured stderr chunks, oldest first, or an empty string if
+    ///   none have been captured yet.
+    nonisolated func recentStderrTail() -> String {
+        stderrTailBuffer.snapshot()
     }
 
     // MARK: - LanguageServerConnection
@@ -483,21 +571,69 @@ actor ProcessLanguageServerConnection: LanguageServerConnection {
     /// per received message. On EOF (the process exited), fails every still-pending request with
     /// `CodeContextError.notRunning`.
     private static func runReaderLoop(
-        stdoutHandle: FileHandle,
+        stdoutFileDescriptor: Int32,
         pendingRequests: PendingRequestTable,
         notificationContinuation: AsyncStream<ServerNotification>.Continuation
     ) {
         var decoder = JSONRPCMessageDecoder()
-        while true {
-            let chunk = stdoutHandle.availableData
-            if chunk.isEmpty {
-                break
-            }
+        while let chunk = Self.readChunk(from: stdoutFileDescriptor) {
             for message in decoder.append(bytes: chunk) {
                 route(message: message, pendingRequests: pendingRequests, notificationContinuation: notificationContinuation)
             }
         }
         pendingRequests.failAll(with: CodeContextError.notRunning)
+    }
+
+    /// The read chunk size used by both background loops — large enough that a single framed
+    /// JSON-RPC message almost always arrives in one read, without requesting an unboundedly
+    /// large buffer from the OS.
+    private static let readChunkSize = 65536
+
+    /// Reads whatever is currently available from `fileDescriptor`, up to `readChunkSize` bytes.
+    ///
+    /// Issues a single raw POSIX `read(2)` call on the raw file descriptor rather than going
+    /// through any `FileHandle` method, for two reasons neither of which alone is sufficient:
+    /// `FileHandle.availableData` raises an Objective-C exception (uncatchable in Swift, crashing
+    /// the process) when the handle is closed concurrently with a blocked read, and even
+    /// `FileHandle`'s own `.fileDescriptor` property getter raises the same kind of exception once
+    /// the handle has been closed — both exactly what happens when `close()` closes a pipe while
+    /// this loop, running detached on another thread, is mid-read. The newer throwing
+    /// `FileHandle.read(upToCount:)` avoids the exception but loops internally trying to fill the
+    /// full requested count (or reach EOF) rather than returning as soon as any data is available,
+    /// so it can block indefinitely against a live process that has written less than
+    /// `readChunkSize` bytes and has nothing further to send yet. Working from a raw file
+    /// descriptor captured once up front (see `readerTask`'s and `stderrTask`'s creation in
+    /// `init`) sidesteps both problems: a single `read(2)` call returns as soon as any data is
+    /// ready, matching `availableData`'s responsiveness, and reports failure as a plain
+    /// `-1`/`errno` rather than an exception, even once the underlying descriptor has been closed
+    /// out from under it.
+    /// A `read(2)` interrupted by a signal (`EINTR`) before transferring any data is not EOF and
+    /// not a real failure — POSIX requires the caller to retry. Under load this is not just a
+    /// theoretical nicety: with several `ProcessLanguageServerConnection`s each running two
+    /// detached loops blocked in `read(2)`, plus the many child processes those tests spawn and
+    /// reap, `SIGCHLD` delivery becomes frequent enough to interrupt an in-flight read. Treating
+    /// that the same as EOF (as a bare `bytesRead > 0` check does) fails every pending request
+    /// with `.notRunning` on a connection whose process is still very much alive.
+    /// - Parameter fileDescriptor: The pipe read end's raw file descriptor.
+    /// - Returns: The bytes read, or `nil` at EOF (`read` returns `0`) or on a genuine error
+    ///   (`read` returns `-1` with `errno != EINTR`, e.g. because the descriptor was closed
+    ///   concurrently) — both end the loop.
+    private static func readChunk(from fileDescriptor: Int32) -> Data? {
+        var buffer = [UInt8](repeating: 0, count: Self.readChunkSize)
+        while true {
+            errno = 0
+            let bytesRead = buffer.withUnsafeMutableBytes { rawBuffer -> Int in
+                guard let baseAddress = rawBuffer.baseAddress else { return -1 }
+                return read(fileDescriptor, baseAddress, Self.readChunkSize)
+            }
+            if bytesRead > 0 {
+                return Data(buffer[0..<bytesRead])
+            }
+            if bytesRead < 0, errno == EINTR {
+                continue
+            }
+            return nil
+        }
     }
 
     /// Routes one decoded JSON-RPC message to a pending request or a server notification.
@@ -550,15 +686,16 @@ actor ProcessLanguageServerConnection: LanguageServerConnection {
         return .publishDiagnostics(uri: uriOnly.uri, diagnostics: diagnostics)
     }
 
-    /// Drains the child process's stderr to `Log.lsp` at `.debug` until EOF.
-    private static func runStderrDrainLoop(stderrHandle: FileHandle) {
-        while true {
-            let chunk = stderrHandle.availableData
-            if chunk.isEmpty {
-                break
-            }
+    /// Drains the child process's stderr to `Log.lsp` at `.debug` until EOF, capturing every
+    /// chunk into `tailBuffer` along the way.
+    /// - Parameters:
+    ///   - stderrFileDescriptor: The child process's stderr read end's raw file descriptor.
+    ///   - tailBuffer: The bounded tail buffer `recentStderrTail()` reads from.
+    private static func runStderrDrainLoop(stderrFileDescriptor: Int32, tailBuffer: StderrTailBuffer) {
+        while let chunk = Self.readChunk(from: stderrFileDescriptor) {
             if let text = String(data: chunk, encoding: .utf8), !text.isEmpty {
                 Log.lsp.debug("\(text, privacy: .public)")
+                tailBuffer.append(chunk: text)
             }
         }
     }

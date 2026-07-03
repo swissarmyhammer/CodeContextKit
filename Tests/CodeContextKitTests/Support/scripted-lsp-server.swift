@@ -41,6 +41,10 @@
 //     pipe doesn't hit EOF) while deliberately never answering a pending
 //     request — used to drive `ConnectionTests`' timeout scenario.
 //
+//   {"action": "stderr", "text": <String>}
+//     Writes `text` to stderr, unframed — used to drive `ConnectionTests`'
+//     `recentStderrTail()` scenario.
+//
 // Deliberately does not import CodeContextKit: this runs as an independent
 // process, not linked against the package under test.
 
@@ -162,6 +166,10 @@ for step in steps {
         while true {
             Thread.sleep(forTimeInterval: 3600)
         }
+
+    case "stderr":
+        let text = step["text"] as? String ?? ""
+        FileHandle.standardError.write(Data(text.utf8))
 
     default:
         break

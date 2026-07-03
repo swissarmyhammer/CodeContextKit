@@ -13,6 +13,16 @@ import Testing
 /// request/response over actual pipes, responses arriving out of order,
 /// a server-initiated notification surfacing while a request is still
 /// in flight, and the injectable-clock timeout path.
+///
+/// `.serialized`: every test here spawns a real `swift <script>` child process (a full
+/// interpreter cold start, not a mock), unlike the rest of the suite. Swift Testing parallelizes
+/// tests within a suite by default; letting a dozen-plus of these launch their subprocesses at
+/// once was observed (under a loaded machine) to occasionally starve a spawn enough that its
+/// pipes closed before the scripted exchange completed, surfacing as a spurious
+/// `CodeContextError.notRunning` or `.timeout` even though each test is reliable in isolation.
+/// Running them one at a time removes that shared-resource contention without weakening any
+/// individual test's coverage.
+@Suite(.serialized)
 struct ConnectionTests {
     /// The absolute path to the scripted subprocess, resolved relative to this test file so it
     /// doesn't depend on the working directory `swift test` is invoked from.
@@ -167,6 +177,73 @@ struct ConnectionTests {
                 return
             }
         }
+
+        await connection.close()
+    }
+
+    @Test
+    func pidIsPositiveAfterSpawn() async throws {
+        let connection = try Self.makeConnection(steps: [["action": "hang"]])
+        #expect(connection.pid > 0)
+        await connection.close()
+    }
+
+    @Test
+    func isRunningReflectsProcessLifecycle() async throws {
+        let connection = try Self.makeConnection(steps: [["action": "hang"]])
+        #expect(await connection.isRunning())
+        await connection.close()
+    }
+
+    @Test
+    func waitUntilExitReturnsOnceTheScriptRunsOut() async throws {
+        // An empty script has nothing left to do, so the interpreter process exits on its own —
+        // `waitUntilExit()` should return without needing `close()` to kill anything.
+        let connection = try Self.makeConnection(steps: [])
+        await connection.waitUntilExit()
+
+        // `waitUntilExit()` is tied to stdout hitting EOF; `Process.isRunning` is updated by a
+        // separate waitpid-based mechanism that can lag EOF by a few milliseconds. Poll with a
+        // bounded budget rather than assuming the two are perfectly synchronized.
+        var isRunning = await connection.isRunning()
+        var pollsRemaining = 100
+        while isRunning, pollsRemaining > 0 {
+            try await Task.sleep(for: .milliseconds(10))
+            isRunning = await connection.isRunning()
+            pollsRemaining -= 1
+        }
+        #expect(!isRunning)
+
+        await connection.close()
+    }
+
+    @Test
+    func recentStderrTailCapturesWhatTheServerPrinted() async throws {
+        // "hang" after the stderr write keeps the process alive, so this test's timing depends
+        // only on the stderr-drain loop noticing the write — not on racing it against process
+        // exit (which closes the stdout and stderr pipes independently, in no guaranteed order).
+        let steps: [[String: Any]] = [
+            ["action": "stderr", "text": "panic: something went wrong"],
+            ["action": "hang"],
+        ]
+        let connection = try Self.makeConnection(steps: steps)
+
+        // The drain loop runs on its own detached task, so the write is captured
+        // asynchronously; poll with a bounded budget (60s, matching `LspDaemon`'s own
+        // healthCheckInterval as this codebase's convention for "generous room for real
+        // subprocess work") rather than assuming the write has already happened by the time
+        // this line runs. A `swift <script>` interpreter cold start is normally well under a
+        // second, but measured empirically to stretch past 30s on a machine saturated with
+        // concurrently spawned interpreter subprocesses — 60s leaves headroom above that
+        // observed worst case.
+        var tail = connection.recentStderrTail()
+        var pollsRemaining = 6000
+        while tail.isEmpty, pollsRemaining > 0 {
+            try await Task.sleep(for: .milliseconds(10))
+            tail = connection.recentStderrTail()
+            pollsRemaining -= 1
+        }
+        #expect(tail.contains("panic: something went wrong"))
 
         await connection.close()
     }
