@@ -785,16 +785,17 @@ enum LiveOpsCore<Connection: LanguageServerConnection> {
 
     /// Reads `relativePath`'s content from disk as UTF-8 text, or `nil` if
     /// it can't be read or decoded, or if `relativePath` fails
-    /// `isSafeRelativePath(_:)`'s path-traversal guard.
+    /// `RelativePath.isSafeRelativePath(_:)`'s path-traversal guard.
     ///
     /// This is the sole gateway every disk read in this type goes through
     /// (`readSourceRange`, and `syncLiveDocument`'s own subsequent
     /// `DocumentURI` construction, which only runs after this guard has
-    /// already accepted `relativePath`) — see `isSafeRelativePath(_:)`'s doc
-    /// comment for why `relativePath` isn't trusted even though every
-    /// current caller in this file passes the op's own `filePath` argument.
+    /// already accepted `relativePath`) — see
+    /// `RelativePath.isSafeRelativePath(_:)`'s doc comment for why
+    /// `relativePath` isn't trusted even though every current caller in
+    /// this file passes the op's own `filePath` argument.
     private static func readFileContents(relativePath: String, rootDirectory: URL) -> String? {
-        guard isSafeRelativePath(relativePath) else {
+        guard RelativePath.isSafeRelativePath(relativePath) else {
             return nil
         }
         let fileURL = rootDirectory.appendingPathComponent(relativePath)
@@ -802,31 +803,6 @@ enum LiveOpsCore<Connection: LanguageServerConnection> {
             return nil
         }
         return contents
-    }
-
-    /// Returns whether `relativePath` is safe to resolve against a
-    /// workspace root with `URL.appendingPathComponent(_:)`.
-    ///
-    /// Rejects an absolute path (leading `/`), a home-relative path
-    /// (leading `~`), and any path containing a `..` component — each of
-    /// which `appendingPathComponent` would otherwise happily resolve
-    /// outside the workspace root. Defense-in-depth, mirroring
-    /// `LSPIndexWorker.isSafeRelativePath(_:)` (the identical guard added
-    /// there for the identical concern): a `filePath` reaching this type
-    /// ultimately comes from a public op's caller, but every location this
-    /// type itself surfaces (an LSP-index symbol, a tree-sitter chunk, a
-    /// live LSP response) also carries a `filePath` that could, in
-    /// principle, echo back through a future call site — this guard doesn't
-    /// trust any of it any more than `LSPIndexWorker` trusts store-sourced
-    /// paths.
-    /// - Parameter relativePath: The candidate workspace-relative path.
-    /// - Returns: `false` if resolving `relativePath` against a workspace
-    ///   root could escape it; `true` otherwise.
-    private static func isSafeRelativePath(_ relativePath: String) -> Bool {
-        guard !relativePath.hasPrefix("/"), !relativePath.hasPrefix("~") else {
-            return false
-        }
-        return !relativePath.split(separator: "/").contains("..")
     }
 
     /// Reads the source lines spanning `range` (inclusive) from `filePath` on disk, or `nil` if the

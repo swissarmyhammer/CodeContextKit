@@ -1,9 +1,13 @@
 import Foundation
 
-/// Shared relative-path computation used by `Walker` and `GitignoreStack`,
-/// which both need to express a filesystem `URL` as a `/`-separated path
-/// relative to some base directory (a workspace root or a `.gitignore`'s
-/// containing directory).
+/// Shared relative-path computation and validation.
+///
+/// `of(_:relativeTo:)` is used by `Walker` and `GitignoreStack`, which both
+/// need to express a filesystem `URL` as a `/`-separated path relative to
+/// some base directory (a workspace root or a `.gitignore`'s containing
+/// directory). `isSafeRelativePath(_:)` is used by `LSPIndexWorker` and
+/// `LiveOpsCore`, which both need to guard a relative path against
+/// traversal before resolving it against a workspace root.
 enum RelativePath {
     /// Computes `url`'s path relative to `base`, using `/` separators.
     ///
@@ -21,5 +25,26 @@ enum RelativePath {
             return nil
         }
         return urlComponents.suffix(from: baseComponents.count).joined(separator: "/")
+    }
+
+    /// Returns whether `relativePath` is safe to resolve against a
+    /// workspace root with `URL.appendingPathComponent(_:)`.
+    ///
+    /// Rejects an absolute path (leading `/`), a home-relative path
+    /// (leading `~`), and any path containing a `..` component — each of
+    /// which `appendingPathComponent` would otherwise happily resolve
+    /// outside the root. Shared by `LSPIndexWorker` (whose `relativePath`
+    /// comes from `indexed_files.file_path`) and `LiveOpsCore` (whose
+    /// `filePath` ultimately comes from a public op's caller, an
+    /// LSP-index symbol, or a tree-sitter chunk) — neither trusts that
+    /// data any more than other externally-sourced input.
+    /// - Parameter relativePath: The candidate workspace-relative path.
+    /// - Returns: `false` if resolving `relativePath` against a workspace
+    ///   root could escape it; `true` otherwise.
+    static func isSafeRelativePath(_ relativePath: String) -> Bool {
+        guard !relativePath.hasPrefix("/"), !relativePath.hasPrefix("~") else {
+            return false
+        }
+        return !relativePath.split(separator: "/").contains("..")
     }
 }
