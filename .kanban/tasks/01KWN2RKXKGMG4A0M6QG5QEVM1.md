@@ -1,6 +1,34 @@
 ---
-position_column: todo
-position_ordinal: '9e80'
+comments:
+- actor: wballard
+  id: 01kwt2eqvy97mgggw9wxst209v
+  text: |-
+    Implemented via TDD:
+
+    1. Read RelativePath.swift, TreeSitterWorker.swift, LSPIndexWorker.swift, and TreeSitterWorkerTests.swift first. Confirmed `RelativePath.isSafeRelativePath(_:)` already exists as a shared static helper (extracted during an earlier session on ^es8qv65) and is already used by LSPIndexWorker and LiveOpsCore.
+    2. Wrote failing test `runRejectsAPathTraversalRelativePathWithoutReadingTheFile` in TreeSitterWorkerTests.swift, mirroring LSPIndexWorkerTests' analogous traversal test: writes a real readable file at "../secret.swift" just outside the temp workspace root, seeds indexed_files dirty via `store.markDirty(filePath: "../secret.swift", ...)`, runs `TreeSitterWorker.run`, asserts processed==1, drainTsDirty() empty, and `ts_chunks` COUNT(*) == 0.
+    3. Confirmed RED: test failed with `chunkCount == 0 -> false, chunkCount -> 1` — proving the traversal file actually got read/chunked before the fix.
+    4. Implemented fix: added `guard RelativePath.isSafeRelativePath(relativePath) else { ...; return nil }` at the very top of `TreeSitterWorker.readAndChunk(relativePath:rootDirectory:)`, before any URL/disk access. Returning `nil` here routes through `run`'s existing `else` branch (`store.markIndexed(filePath:, layer: .treeSitter)`) — the same "mark indexed, nothing written, don't retry" mechanism already used for an unresolvable language module or unreadable file. No new duplicate helper added.
+    5. Confirmed GREEN: `swift test --filter TreeSitterWorkerTests` — 7/7 pass. Also ran `swift test --filter LSPIndexWorkerTests` — 11/11 pass (shared helper unaffected).
+    6. `swift build` clean, no new warnings (only a pre-existing unrelated mlx-swift_Cmlx.bundle SwiftPM notice).
+    7. Attempted one full-suite `swift test` run (wrapped in a 600s timeout per task guidance) for extra confidence: it surfaced `DiagnosticsTests.scopeResolutionExcludesNonDiagnosableExtensions` failing (`resolved == ["README.md"]` instead of empty). Verified via `git stash` of just my two changed files that this failure is 100% pre-existing/unrelated — it fails identically on main without my diff. Not caused by this change; not chasing further (unrelated to ^g5qevm1, and consistent with the known separate full-suite flakiness tracked by ^vhcye6y).
+    8. Spawned the `double-check` adversarial reviewer on the diff; awaiting its verdict before finalizing.
+  timestamp: 2026-07-05T21:20:23.422568+00:00
+- actor: wballard
+  id: 01kwt2hrv7rfxqne3g7d7se2gw
+  text: |-
+    Adversarial double-check (via `double-check` agent) returned PASS with no findings: confirmed the guard runs before any disk access, `RelativePath.isSafeRelativePath` correctly catches embedded `..` (not just leading), the test is a real discriminator (independently reverted just TreeSitterWorker.swift via git stash and reconfirmed the new test fails with chunkCount==1), correct `.treeSitter` layer used for markIndexed, no duplicate helper introduced, and doc-comment style matches LSPIndexWorker's precedent.
+
+    really-done verification complete:
+    - `swift build`: clean, exit 0, no new warnings.
+    - `swift test --filter TreeSitterWorkerTests`: 7/7 pass (all wrapped in `timeout 300` + `pkill -9 -f swiftpm-testing-helper` per task guidance).
+    - `swift test --filter LSPIndexWorkerTests`: 11/11 pass (shared `RelativePath.isSafeRelativePath` helper unaffected).
+    - One full-suite `swift test` attempted under a 600s timeout: surfaced a pre-existing, unrelated failure (`DiagnosticsTests.scopeResolutionExcludesNonDiagnosableExtensions`), confirmed via git-stash isolation to fail identically without this diff — not caused by this change, not pursued further per task instructions (separate known flakiness tracked by ^vhcye6y).
+
+    Leaving task in `doing` per /implement process — ready for /review.
+  timestamp: 2026-07-05T21:22:02.727718+00:00
+position_column: doing
+position_ordinal: '80'
 title: 'TreeSitterWorker: same path-traversal risk as LSPIndexWorker for indexed_files.file_path'
 ---
 ## What

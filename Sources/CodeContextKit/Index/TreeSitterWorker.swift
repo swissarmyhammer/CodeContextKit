@@ -91,11 +91,29 @@ public enum TreeSitterWorker {
     }
 
     /// Reads `relativePath`'s content from disk and chunks it with its
-    /// registered `LanguageModule`, or `nil` if the language module can't be
-    /// resolved or the file can't be read as UTF-8 text.
+    /// registered `LanguageModule`, or `nil` if `relativePath` is unsafe to
+    /// resolve, the language module can't be resolved, or the file can't be
+    /// read as UTF-8 text.
+    ///
+    /// `relativePath` is checked with `RelativePath.isSafeRelativePath(_:)`
+    /// before it is ever resolved against disk: a `..` component, or a
+    /// leading `/` or `~`, is rejected the same way an unresolvable language
+    /// module or an unreadable file is — `run(store:rootDirectory:embedder:)`
+    /// marks the file tree-sitter-indexed with nothing written, so it isn't
+    /// retried forever. The walker/reconciler that populates
+    /// `indexed_files.file_path` should already only ever write
+    /// workspace-relative paths, but this layer doesn't trust data flowing
+    /// back out of the store any more than `LSPIndexWorker` trusts it.
     ///
     /// Runs entirely outside any database transaction.
     private static func readAndChunk(relativePath: String, rootDirectory: URL) -> ParsedFile? {
+        guard RelativePath.isSafeRelativePath(relativePath) else {
+            Log.index.warning(
+                "rejecting unsafe relative path \(relativePath, privacy: .public) for tree-sitter indexing (possible path traversal); marking indexed"
+            )
+            return nil
+        }
+
         let fileExtension = URL(fileURLWithPath: relativePath).pathExtension
         guard let module = Languages.module(forFileExtension: fileExtension) else {
             Log.index.warning("no language module for \(relativePath, privacy: .public)")

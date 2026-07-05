@@ -111,6 +111,35 @@ struct TreeSitterWorkerTests {
         }
     }
 
+    // MARK: - Path-traversal rejection
+
+    @Test
+    func runRejectsAPathTraversalRelativePathWithoutReadingTheFile() async throws {
+        try await withTemporaryWorkspace { root in
+            let store = try Store(rootDirectory: root)
+            // A real, readable file sitting just outside the workspace root —
+            // if `..` components in `file_path` were resolved instead of
+            // rejected, this file would actually be read and chunked,
+            // proving the traversal is live rather than coincidentally
+            // absent (an outright-missing target would hit the pre-existing
+            // "unreadable file" skip either way and wouldn't discriminate).
+            try write("func secret() {}\n", to: "../secret.swift", in: root)
+            // A `file_path` that escapes the workspace root should never be
+            // resolved against disk, even though `drainTsDirty` will happily
+            // return whatever string is stored in `indexed_files.file_path`.
+            try await store.markDirty(filePath: "../secret.swift", contentHash: Data("../secret.swift".utf8), fileSize: 1)
+
+            let processed = try await TreeSitterWorker.run(store: store, rootDirectory: root)
+
+            #expect(processed == 1)
+            #expect(try await store.drainTsDirty().isEmpty)
+            let chunkCount = try await store.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM ts_chunks") ?? 0
+            }
+            #expect(chunkCount == 0, "the out-of-root file's chunks must never be persisted")
+        }
+    }
+
     @Test
     func runMarksFileIndexedEvenWhenItHasNoChunkableNodes() async throws {
         try await withTemporaryWorkspace { root in
