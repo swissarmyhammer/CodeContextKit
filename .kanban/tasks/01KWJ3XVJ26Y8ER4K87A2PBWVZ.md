@@ -1,9 +1,25 @@
 ---
+comments:
+- actor: wballard
+  id: 01kwph51fkmvsxy870d7fne6dg
+  text: |-
+    Research complete. Key findings:
+
+    - Rust reference found at /Users/wballard/github/swissarmyhammer/swissarmyhammer/crates/swissarmyhammer-diagnostics/src/{diagnose,settle,record,config}.rs. Scope resolution (git status/glob/sha) lives in the *caller* (crates/swissarmyhammer-tools/.../diagnostics/mod.rs), not in the diagnostics crate itself, and uses git2 (libgit2) — this Swift port has no git2 dependency, so scope resolution will shell out to the `git` CLI via Process (matching ProcessLanguageServerConnection's spawn style), documented as a deliberate divergence.
+    - LspSession (Sources/CodeContextKit/LSP/LspSession.swift) already has everything needed: syncOpen, pullDiagnostics, diagnosticUpdates() (AsyncStream, multi-subscriber), diagnostics(for:), isReady. No isRunning — "not running" is modeled as `session: LspSession<Connection>? == nil`, matching LiveOpsCore's convention.
+    - DiagnosticSeverity already exists (LSPTypes.swift): .error=1/.warning=2/.information=3/.hint=4 — severity floor = "rawValue <= floor.rawValue".
+    - BlastRadiusOps.blastRadius(store:file:symbol:maxHops:) (Ops/BlastRadius.swift) is the one-hop-dependents primitive; call with maxHops:1, symbol:nil, collect hop symbols' filePath excluding self.
+    - No git-status precedent in this codebase at all (grep came up empty) — new pattern, modeled on ProcessLanguageServerConnection's Process/Pipe spawn style but as one-shot commands (not the persistent raw-fd reader).
+    - Clock injection pattern confirmed: `any Clock<Duration> = ContinuousClock()` (LSPIndexWorker, ProcessLanguageServerConnection); tests use Tests/CodeContextKitTests/Support/ManualClock.swift with `waitForWaiter()`/`advance(by:)`. For the settle engine's absolute hard-deadline + resettable debounce-deadline race, existentials can't expose `.now`/Instant cleanly, so Settle's internal race functions are generic over `<C: Clock>` instead of using `any Clock<Duration>` — the public entry point still takes `any Clock<Duration> = ContinuousClock()` for ergonomics and forwards into the generic implementation (relying on Swift's implicit existential opening, SE-0352).
+    - AsyncStream cancellation semantics for racing stream-updates against timers were not something I wanted to gamble on, so Settle uses a small cancellation-safe `UpdateMailbox` actor (modeled directly on ManualClock's own waiter/continuation pattern already trusted in this codebase) fed by a persistent unstructured drain Task, rather than racing `AsyncStream.next()` directly inside a TaskGroup.
+
+    Proceeding with TDD: writing DiagnosticsTests.swift first (failing), then implementing Sources/CodeContextKit/Diagnostics/.
+  timestamp: 2026-07-04T12:20:16.499107+00:00
 depends_on:
 - 01KWJ3S972X06D1TKBDBCVB3SD
 - 01KWJ3VNKRFPHF36XXH740CWZM
-position_column: todo
-position_ordinal: '9880'
+position_column: doing
+position_ordinal: '80'
 title: 'Diagnostics op: settle engine, scopes, dependents fold-in'
 ---
 ## What
