@@ -143,7 +143,7 @@ func requestDocumentURI(from data: Data) -> String? {
 
 /// Asserts a "read" step's `expectMethod` (if present) against the actual
 /// message's `method` field, exiting with a stderr message on mismatch.
-func assertExpectedMethod(_ expectMethod: String, message: Data) {
+func assertExpectedMethod(expecting expectMethod: String, message: Data) {
     let actualMethod = requestMethod(from: message)
     guard actualMethod == expectMethod else {
         FileHandle.standardError.write(Data("scripted-lsp-server: expected method \(expectMethod), got \(actualMethod ?? "nil")\n".utf8))
@@ -154,7 +154,7 @@ func assertExpectedMethod(_ expectMethod: String, message: Data) {
 /// Asserts a "read" step's `expectURI` (if present) against the actual
 /// message's `params.textDocument.uri`, exiting with a stderr message on
 /// mismatch.
-func assertExpectedURI(_ expectURI: String, message: Data) {
+func assertExpectedURI(expecting expectURI: String, message: Data) {
     let actualURI = requestDocumentURI(from: message)
     guard actualURI == expectURI else {
         FileHandle.standardError.write(Data("scripted-lsp-server: expected uri \(expectURI), got \(actualURI ?? "nil")\n".utf8))
@@ -166,10 +166,10 @@ func assertExpectedURI(_ expectURI: String, message: Data) {
 /// against the actual message read from stdin.
 func validateReadExpectations(step: [String: Any], message: Data) {
     if let expectMethod = step["expectMethod"] as? String {
-        assertExpectedMethod(expectMethod, message: message)
+        assertExpectedMethod(expecting: expectMethod, message: message)
     }
     if let expectURI = step["expectURI"] as? String {
-        assertExpectedURI(expectURI, message: message)
+        assertExpectedURI(expecting: expectURI, message: message)
     }
 }
 

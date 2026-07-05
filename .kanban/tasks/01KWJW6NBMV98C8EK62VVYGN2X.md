@@ -40,6 +40,31 @@ comments:
 
     Only Tests/CodeContextKitTests/Support/scripted-lsp-server.swift changed (plus routine kanban bookkeeping files). No production code touched. Leaving task in `doing` per process.
   timestamp: 2026-07-05T20:48:30.791919+00:00
+- actor: wballard
+  id: 01kwt16f4vj1exe85zmveq1scr
+  text: |-
+    Fixed both round-2 (2026-07-05 15:50) review findings — unlabeled first parameter on non-conversion functions in scripted-lsp-server.swift:
+
+    - `assertExpectedMethod(_ expectMethod: String, message: Data)` -> `assertExpectedMethod(expecting expectMethod: String, message: Data)`
+    - `assertExpectedURI(_ expectURI: String, message: Data)` -> `assertExpectedURI(expecting expectURI: String, message: Data)`
+
+    Updated the single call site of each (both inside `validateReadExpectations(step:message:)`) to `assertExpectedMethod(expecting: expectMethod, message: message)` / `assertExpectedURI(expecting: expectURI, message: message)`. Confirmed via grep these are the only call sites in the repo. No other code changed.
+
+    really-done verification:
+    - `swift build`: clean, zero warnings beyond the pre-existing unrelated mlx-swift plugin warning.
+    - `swift build --build-tests`: clean, same caveat.
+    - `swift test --filter ConnectionTests` (each wrapped in `timeout 180`, followed by `pkill -9 -f swiftpm-testing-helper` per this task's guidance to avoid the unrelated full-suite hang tracked by ^vhcye6y): 18/18 green across 3 consecutive runs, no flakiness.
+    - Adversarial double-check agent launched to confirm scope and label choice; awaiting verdict before final sign-off.
+
+    Leaving task in `doing` per process.
+  timestamp: 2026-07-05T20:58:23.771483+00:00
+- actor: wballard
+  id: 01kwt1a5kbkk7pae2tfjfgvk9p
+  text: |-
+    Adversarial double-check verdict: PASS, no findings. Confirmed diff scoped to exactly the two signature renames + two call-site updates in scripted-lsp-server.swift, no missed call sites repo-wide, `expecting:` label reads naturally and matches the file's existing labeling conventions (e.g. resolveTargetID(forURI:)), no collisions, no dangling old-form references, no unrelated code changes.
+
+    Both round-2 (2026-07-05 15:50) findings checked off in the task description. Verification (build clean/zero new warnings, ConnectionTests 18/18 green x3, no flakiness) recorded above. Leaving task in `doing` for review per process.
+  timestamp: 2026-07-05T21:00:25.067201+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add ConnectionTests coverage for refactored LSP helper call sites
@@ -57,3 +82,10 @@ Not fixed in this pass: task scope was running/fixing the existing test suite (1
 - [x] `Tests/CodeContextKitTests/Support/scripted-lsp-server.swift:118` — Guard statement nested 4 levels deep (for > guard > switch/case > if > guard) exceeds recommended maximum of 3 and makes the code harder to follow. Extract the expectMethod validation into a separate helper function, or restructure the case block to move validation logic outside the if statement. **Fixed**: extracted `assertExpectedMethod(_:message:)` (and its expectURI sibling) into a new `validateReadExpectations(step:message:)` helper called from the "read" case, reducing nesting to for > switch/case > guard.
 - [x] `Tests/CodeContextKitTests/Support/scripted-lsp-server.swift:136` — Guard statement nested 4 levels deep (for > guard > switch/case > if > guard) exceeds recommended maximum of 3 and makes the code harder to follow. Extract the URI matching logic into a separate helper function to reduce nesting depth and improve readability. **Fixed**: extracted `assertExpectedURI(_:message:)`, called from the same `validateReadExpectations(step:message:)` helper as above.
 - [x] `Tests/CodeContextKitTests/Support/scripted-lsp-server.swift:143` — Guard statement nested 4 levels deep (for > guard > switch/case > else > guard) exceeds recommended maximum of 3 and makes the code harder to follow. Extract the index-based request lookup logic into a separate helper function to reduce nesting depth and improve readability. **Fixed**: extracted `resolveTargetID(forURI:requestsReadSoFar:)` and `resolveTargetID(forIndex:requestsReadSoFar:)`, both called from a new `resolveTargetID(step:requestsReadSoFar:)` dispatcher used by the "respond" case, reducing nesting to for > switch/case > (function call).
+
+## Review Findings (2026-07-05 15:50)
+
+Scope: HEAD~1..HEAD (commit 8063f51) — round-2 nesting fix delta only. Verified against `git diff HEAD~1..HEAD`: both findings target `assertExpectedMethod` and `assertExpectedURI`, functions newly introduced by this commit; not a re-flag of the round-1 nesting findings above.
+
+- [x] `Tests/CodeContextKitTests/Support/scripted-lsp-server.swift:111` — First parameter of non-conversion function should be labeled. The rule states "Omit the first argument label only for value-preserving conversions. Otherwise, label it." This assertion function is neither a conversion nor a factory method, so the first parameter needs a label. Add a label to the first parameter: `func assertExpectedMethod(expecting expectMethod: String, message: Data)` or `func assertExpectedMethod(expected expectMethod: String, message: Data)`. **Fixed**: renamed to `assertExpectedMethod(expecting expectMethod: String, message: Data)`; updated its single call site in `validateReadExpectations(step:message:)`.
+- [x] `Tests/CodeContextKitTests/Support/scripted-lsp-server.swift:122` — First parameter of non-conversion function should be labeled. Same as above — this assertion function needs its first parameter labeled. Add a label to the first parameter: `func assertExpectedURI(expecting expectURI: String, message: Data)` or `func assertExpectedURI(expected expectURI: String, message: Data)`. **Fixed**: renamed to `assertExpectedURI(expecting expectURI: String, message: Data)`; updated its single call site in `validateReadExpectations(step:message:)`.
