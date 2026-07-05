@@ -71,21 +71,23 @@ final class UpdateMailbox: @unchecked Sendable {
     /// Records one update, waking every suspended `next()` caller.
     /// - Parameter update: The update to record.
     func record(_ update: DiagnosticUpdate) {
-        lock.lock()
-        queued.append(update)
-        let toResume = waiters
-        waiters.removeAll()
-        lock.unlock()
-        for continuation in toResume.values {
-            continuation.resume()
-        }
+        mutateStateAndResumeWaiters { queued.append(update) }
     }
 
     /// Marks the mailbox closed (its feeding stream ended), waking every
     /// suspended `next()` caller.
     func markClosed() {
+        mutateStateAndResumeWaiters { isClosed = true }
+    }
+
+    /// Applies `mutate` under the lock, then drains and resumes every
+    /// suspended `next()` caller — the shared lock-mutate-extract-resume
+    /// pattern behind both `record(_:)` and `markClosed()`, which differ only
+    /// in what state they mutate before waking waiters.
+    /// - Parameter mutate: The state change to apply while holding the lock (appending to `queued`, or setting `isClosed`).
+    private func mutateStateAndResumeWaiters(_ mutate: () -> Void) {
         lock.lock()
-        isClosed = true
+        mutate()
         let toResume = waiters
         waiters.removeAll()
         lock.unlock()

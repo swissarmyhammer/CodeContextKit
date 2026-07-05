@@ -87,9 +87,8 @@ enum DiagnosticsOps<Connection: LanguageServerConnection> {
         let targetSet = Set(targets)
         var collected: Set<String> = []
         for target in targets {
-            for dependent in await oneHopDependents(store: store, filePath: target) where !targetSet.contains(dependent) {
-                collected.insert(dependent)
-            }
+            let dependents = await oneHopDependents(store: store, filePath: target)
+            collected.formUnion(dependents.filter { !targetSet.contains($0) })
         }
         return collected.sorted()
     }
@@ -117,13 +116,10 @@ enum DiagnosticsOps<Connection: LanguageServerConnection> {
     static func oneHopDependents(store: Store, filePath: String) async -> [String] {
         do {
             let radius = try await BlastRadiusOps.blastRadius(store: store, file: filePath, maxHops: 1)
-            var files: Set<String> = []
-            for hop in radius.hops {
-                for symbol in hop.symbols where symbol.filePath != filePath {
-                    files.insert(symbol.filePath)
-                }
+            let files = radius.hops.flatMap { hop in
+                hop.symbols.filter { $0.filePath != filePath }.map(\.filePath)
             }
-            return files.sorted()
+            return Set(files).sorted()
         } catch {
             return []
         }
@@ -167,15 +163,6 @@ enum DiagnosticsOps<Connection: LanguageServerConnection> {
         DocumentURI(rootDirectory.appendingPathComponent(relativePath).absoluteString)
     }
 
-    /// Converts a `DocumentURI` back to a workspace-relative path, falling
-    /// back to the URI's raw filesystem path when it resolves outside
-    /// `rootDirectory` — mirrors `LiveOpsCore`'s identically-named private
-    /// helper.
-    private static func relativeFilePath(fromURI uri: DocumentURI, rootDirectory: URL) -> String {
-        guard let url = URL(string: uri.value) else { return uri.value }
-        return RelativePath.of(url, relativeTo: rootDirectory) ?? url.path
-    }
-
     // MARK: - Report building
 
     /// Groups, ranks, and caps `uriDiagnostics` into a `DiagnosticsReport`.
@@ -207,7 +194,7 @@ enum DiagnosticsOps<Connection: LanguageServerConnection> {
     ) -> DiagnosticsReport {
         var recordsByPath: [String: [DiagnosticRecord]] = [:]
         for (uri, diagnostics) in uriDiagnostics {
-            let path = relativeFilePath(fromURI: uri, rootDirectory: rootDirectory)
+            let path = RelativePath.relativeFilePath(fromURI: uri, rootDirectory: rootDirectory)
             let filtered = diagnostics
                 .filter { $0.severity.rawValue <= severity.rawValue }
                 .map { DiagnosticRecord.from(diagnostic: $0, path: path) }

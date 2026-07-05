@@ -47,4 +47,18 @@ enum RelativePath {
         }
         return !relativePath.split(separator: "/").contains("..")
     }
+
+    /// Converts a `DocumentURI` back to a workspace-relative path, falling
+    /// back to the URI's raw filesystem path when it resolves outside
+    /// `rootDirectory` (e.g. a standard-library definition, for a live LSP
+    /// response). Shared by `LiveOpsCore` and `DiagnosticsOps`, which both
+    /// need to relativize a `DocumentURI` against the workspace root.
+    /// - Parameters:
+    ///   - uri: The document URI to relativize.
+    ///   - rootDirectory: The workspace root `uri` is expected to be nested under.
+    /// - Returns: `uri`'s workspace-relative path, or its raw value/filesystem path if it isn't nested under `rootDirectory`.
+    static func relativeFilePath(fromURI uri: DocumentURI, rootDirectory: URL) -> String {
+        guard let url = URL(string: uri.value) else { return uri.value }
+        return of(url, relativeTo: rootDirectory) ?? url.path
+    }
 }

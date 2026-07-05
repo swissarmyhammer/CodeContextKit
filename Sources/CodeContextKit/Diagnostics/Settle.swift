@@ -157,16 +157,33 @@ enum Settle {
                 guard clock.now < hardDeadline else { return .pending }
                 return .settled(state)
             case let .updates(updates):
-                var sawWatchedUpdate = false
-                for update in updates where watched.contains(update.uri) {
-                    state[update.uri] = update.diagnostics
-                    sawWatchedUpdate = true
-                }
-                if sawWatchedUpdate {
+                if applyWatchedUpdates(updates, watched: watched, into: &state) {
                     debounceDeadline = clock.now.advanced(by: settleWindow)
                 }
             }
         }
+    }
+
+    /// Applies `updates` restricted to `watched` uris into `state`, restarting
+    /// the debounce window only when at least one of them was actually
+    /// watched — extracted from `settleStream`'s `.updates` case to keep that
+    /// loop's nesting shallow.
+    /// - Parameters:
+    ///   - updates: The updates recorded by the mailbox since the last iteration.
+    ///   - watched: The uris `settleStream` is waiting on.
+    ///   - state: The per-uri diagnostics accumulated so far, updated in place.
+    /// - Returns: Whether at least one watched uri was updated (and the debounce window should restart).
+    private static func applyWatchedUpdates(
+        _ updates: [DiagnosticUpdate],
+        watched: Set<DocumentURI>,
+        into state: inout [DocumentURI: [Diagnostic]]
+    ) -> Bool {
+        var sawWatchedUpdate = false
+        for update in updates where watched.contains(update.uri) {
+            state[update.uri] = update.diagnostics
+            sawWatchedUpdate = true
+        }
+        return sawWatchedUpdate
     }
 
     /// One iteration's outcome: whichever of "an update arrived", "the

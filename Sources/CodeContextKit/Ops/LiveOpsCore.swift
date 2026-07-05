@@ -290,7 +290,7 @@ enum LiveOpsCore<Connection: LanguageServerConnection> {
 
         let locations = try await store.read { db in
             try rawLocations.map { location -> DefinitionLocation in
-                let path = relativeFilePath(fromURI: location.uri, rootDirectory: rootDirectory)
+                let path = RelativePath.relativeFilePath(fromURI: location.uri, rootDirectory: rootDirectory)
                 let sourceText = includeSource ? readSourceRange(rootDirectory: rootDirectory, filePath: path, range: location.range) : nil
                 let symbol = try LayeredContext.enrichLocation(db: db, filePath: path, range: location.range).symbol
                 return DefinitionLocation(filePath: path, range: location.range, sourceText: sourceText, symbol: symbol)
@@ -496,7 +496,7 @@ enum LiveOpsCore<Connection: LanguageServerConnection> {
 
         let references = try await store.read { db in
             try rawLocations.map { location -> ReferenceLocation in
-                let path = relativeFilePath(fromURI: location.uri, rootDirectory: rootDirectory)
+                let path = RelativePath.relativeFilePath(fromURI: location.uri, rootDirectory: rootDirectory)
                 let symbol = try LayeredContext.enrichLocation(db: db, filePath: path, range: location.range).symbol
                 return ReferenceLocation(filePath: path, range: location.range, enclosingSymbol: symbol)
             }
@@ -683,7 +683,7 @@ enum LiveOpsCore<Connection: LanguageServerConnection> {
 
         let implementations = try await store.read { db in
             try rawLocations.prefix(maxResults).map { location -> DefinitionLocation in
-                let path = relativeFilePath(fromURI: location.uri, rootDirectory: rootDirectory)
+                let path = RelativePath.relativeFilePath(fromURI: location.uri, rootDirectory: rootDirectory)
                 let sourceText = includeSource ? readSourceRange(rootDirectory: rootDirectory, filePath: path, range: location.range) : nil
                 let symbol = try LayeredContext.enrichLocation(db: db, filePath: path, range: location.range).symbol
                 return DefinitionLocation(filePath: path, range: location.range, sourceText: sourceText, symbol: symbol)
@@ -816,15 +816,6 @@ enum LiveOpsCore<Connection: LanguageServerConnection> {
         let endLine = min(lines.count - 1, range.end.line)
         guard startLine <= endLine, startLine < lines.count else { return nil }
         return lines[startLine...endLine].joined(separator: "\n")
-    }
-
-    /// Converts a live LSP response's absolute file `DocumentURI` back to a
-    /// workspace-relative path, falling back to the URI's raw filesystem path
-    /// when it resolves outside `rootDirectory` (e.g. a standard-library
-    /// definition).
-    private static func relativeFilePath(fromURI uri: DocumentURI, rootDirectory: URL) -> String {
-        guard let url = URL(string: uri.value) else { return uri.value }
-        return RelativePath.of(url, relativeTo: rootDirectory) ?? url.path
     }
 
     /// Builds a zero-width `LSPRange` at `(line, character)`, the shape
