@@ -78,22 +78,34 @@ enum DiagnosticsScopeResolver {
         return RelativePath.of(candidateURL, relativeTo: rootDirectory)
     }
 
-    /// Whether `relativePath`'s extension is one `Languages.all` recognizes.
+    /// Whether `relativePath`'s extension belongs to a language module that
+    /// actually has an LSP server to diagnose it with.
     ///
-    /// Mirrors `Walker.enumerateFiles(rootDirectory:extensions:)`'s default
-    /// extension set exactly, rather than introducing a second definition
-    /// of "diagnosable" alongside it.
+    /// Deliberately narrower than `Walker.enumerateFiles(rootDirectory:extensions:)`'s
+    /// indexable extension set (`Languages.all.flatMap { $0.fileExtensions }`):
+    /// indexing covers every tree-sitter-chunkable format, including
+    /// LSP-less ones like Markdown/SQL/JSON/YAML/Bash (`languageServer ==
+    /// nil`), but diagnostics can only ever come from a running language
+    /// server. Filtering `Languages.all` down to `languageServer != nil`
+    /// before flat-mapping `fileExtensions` is this module's own "does this
+    /// extension have an LSP" answer — it's the same signal each
+    /// `LanguageModule`'s `languageServer` doc comment already ties back to
+    /// `builtin/lsp/*.yaml`, without needing a second, separate lookup into
+    /// that registry.
     /// - Parameter relativePath: The workspace-relative path to check.
-    /// - Returns: `true` if the path's extension is registered by any `Languages.all` module.
+    /// - Returns: `true` if the path's extension is registered by an LSP-backed `Languages.all` module.
     private static func isDiagnosableExtension(_ relativePath: String) -> Bool {
         let fileExtension = (relativePath as NSString).pathExtension.lowercased()
         guard !fileExtension.isEmpty else { return false }
         return knownExtensions.contains(fileExtension)
     }
 
-    /// Every file extension (lowercased, no leading dot) registered across `Languages.all`.
+    /// Every file extension (lowercased, no leading dot) registered by an
+    /// LSP-backed `Languages.all` module (`languageServer != nil`).
     private static let knownExtensions: Set<String> = Set(
-        Languages.all.flatMap { module in module.fileExtensions.map { $0.lowercased() } }
+        Languages.all
+            .filter { module in module.languageServer != nil }
+            .flatMap { module in module.fileExtensions.map { $0.lowercased() } }
     )
 }
 
