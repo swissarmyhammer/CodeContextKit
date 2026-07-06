@@ -10,27 +10,49 @@ import Foundation
 /// reader loop and timeout race both resolve continuations from outside the
 /// actor too. `@unchecked Sendable` is safe because every access goes
 /// through `lock`.
-private final class PendingRequestTable: @unchecked Sendable {
+///
+/// Not `private`: unit-tested directly (`PendingRequestTableTests`) since the
+/// register/resolve ordering it guarantees is only reliably exercisable this
+/// way — reproducing the real race below via an actual child process would
+/// require winning a microsecond-scale scheduling race on demand.
+final class PendingRequestTable: @unchecked Sendable {
     private let lock = NSLock()
     private var continuations: [Int: CheckedContinuation<Data, Error>] = [:]
+    private var earlyResponses: [Int: Data] = [:]
 
     /// Registers `continuation` as awaiting the response to request `id`.
+    ///
+    /// If a response for `id` already arrived via `resolveOrBuffer(id:response:)` before this
+    /// call ever ran, `continuation` is resumed immediately with the buffered response instead of
+    /// being stored — see `resolveOrBuffer(id:response:)`'s doc comment for why that race is
+    /// always possible and why silently losing it used to hang the caller forever.
     /// - Parameters:
     ///   - id: The JSON-RPC id of the outstanding request.
     ///   - continuation: The continuation to resume when a response or timeout resolves `id`.
     func register(id: Int, continuation: CheckedContinuation<Data, Error>) {
         lock.lock()
-        defer { lock.unlock() }
+        if let buffered = earlyResponses.removeValue(forKey: id) {
+            lock.unlock()
+            continuation.resume(returning: buffered)
+            return
+        }
         continuations[id] = continuation
+        lock.unlock()
     }
 
     /// Resolves the pending request `id` with `result`, if it is still pending.
+    ///
+    /// Used by the request-timeout race in `awaitResponse(id:)`: unlike
+    /// `resolveOrBuffer(id:response:)`, a miss here always means the request was already resolved
+    /// by some other path (the real response, or — impossible in practice, since only one timeout
+    /// task exists per id — another timeout), never that its continuation hasn't registered yet,
+    /// so there is nothing to buffer.
     /// - Parameters:
     ///   - id: The JSON-RPC id to resolve.
     ///   - result: The response payload to resume with, or an error (e.g. a timeout).
     /// - Returns: `true` if a pending continuation for `id` was found and resumed; `false` if
-    ///   `id` was already resolved (or never registered), in which case `result` is discarded —
-    ///   this is what lets a timeout and a late-arriving response race safely.
+    ///   `id` was already resolved, in which case `result` is discarded — this is what lets a
+    ///   timeout and a real response race safely.
     @discardableResult
     func resolve(id: Int, with result: Result<Data, Error>) -> Bool {
         lock.lock()
@@ -43,13 +65,45 @@ private final class PendingRequestTable: @unchecked Sendable {
         return true
     }
 
+    /// Resolves the pending request `id` with `response` if it is already registered; otherwise
+    /// buffers `response` so the next `register(id:continuation:)` call for the same `id`
+    /// delivers it immediately instead of leaving that registration to wait forever.
+    ///
+    /// Used exclusively by the reader loop's `route(message:pendingRequests:notificationContinuation:)`
+    /// — the one caller whose response can legitimately arrive before the matching request has
+    /// finished registering its continuation. `performRequest` writes a request to the child
+    /// process's stdin, then separately spawns the task that registers a continuation to await
+    /// its reply; nothing enforces that the second step wins the race against a real round trip,
+    /// especially once the cooperative thread pool is busy running hundreds of other concurrent
+    /// tasks (exactly the condition a full `swift test` run creates). Before this buffering
+    /// existed, a response arriving in that window found no continuation to resolve, was silently
+    /// discarded (`route` never checked `resolve`'s `Bool` result), and the registration that
+    /// followed was orphaned: nothing but its own sibling timeout task would ever resolve it, and
+    /// that task's wakeup could itself be starved by the same load that lost the race in the first
+    /// place — manifesting as exactly the "genuinely un-resumed continuation" hang this fixes.
+    /// - Parameters:
+    ///   - id: The JSON-RPC id the response answers.
+    ///   - response: The raw response message bytes.
+    func resolveOrBuffer(id: Int, response: Data) {
+        lock.lock()
+        guard let continuation = continuations.removeValue(forKey: id) else {
+            earlyResponses[id] = response
+            lock.unlock()
+            return
+        }
+        lock.unlock()
+        continuation.resume(returning: response)
+    }
+
     /// Fails every still-pending request with `error`, used when the connection closes or the
-    /// child process exits unexpectedly.
+    /// child process exits unexpectedly. Also discards any buffered early responses: nothing will
+    /// ever register for them once the connection is going away.
     /// - Parameter error: The error to fail every pending request with.
     func failAll(with error: Error) {
         lock.lock()
         let pending = continuations
         continuations.removeAll()
+        earlyResponses.removeAll()
         lock.unlock()
         for continuation in pending.values {
             continuation.resume(throwing: error)
@@ -648,7 +702,7 @@ public actor ProcessLanguageServerConnection: LanguageServerConnection {
         }
 
         if let id = peek.id {
-            pendingRequests.resolve(id: id, with: .success(message))
+            pendingRequests.resolveOrBuffer(id: id, response: message)
             return
         }
 
