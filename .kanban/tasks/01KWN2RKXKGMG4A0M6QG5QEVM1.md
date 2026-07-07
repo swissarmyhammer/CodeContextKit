@@ -27,8 +27,12 @@ comments:
 
     Leaving task in `doing` per /implement process — ready for /review.
   timestamp: 2026-07-05T21:22:02.727718+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: wballard
+  id: 01kwt3e8k8y9qn8k88za9j834j
+  text: 'Round 1 review of HEAD~1..HEAD (cd29126): clean, 0 findings. TreeSitterWorker now guards with the shared RelativePath.isSafeRelativePath(_:) helper before disk access, matches LSPIndexWorker''s mark-indexed-nothing-written pattern on rejection, and ships a genuinely discriminating regression test. Moved to done.'
+  timestamp: 2026-07-05T21:37:36.360331+00:00
+position_column: done
+position_ordinal: 9f80
 title: 'TreeSitterWorker: same path-traversal risk as LSPIndexWorker for indexed_files.file_path'
 ---
 ## What
@@ -58,3 +62,13 @@ Note: `Watcher.swift`'s `appendingPathComponent` call was checked and is *not* a
 ## Workflow
 
 Use `/tdd` — write the failing test first, then implement to make it pass.
+
+## Review Findings (2026-07-05 16:33)
+
+No findings. The engine ran 15 checks across the `HEAD~1..HEAD` diff (commit cd29126) with 0 confirmed and 0 refuted.
+
+Manually cross-checked against `git diff HEAD~1..HEAD`:
+- `readAndChunk` now guards with `RelativePath.isSafeRelativePath(relativePath)` before any `URL`/disk access, rejecting `..` components and leading `/`/`~` — reuses the pre-existing shared helper in `RelativePath.swift` (hoisted there in commit `d7685da`, prior to this task), not a duplicate of `LSPIndexWorker`'s guard.
+- On rejection the file is marked tree-sitter-indexed with nothing written (returns `nil`, same code path as an unresolvable language module or unreadable file), matching `LSPIndexWorker`'s established "don't retry forever" pattern for permanently-bad inputs.
+- New regression test `runRejectsAPathTraversalRelativePathWithoutReadingTheFile` in `Tests/CodeContextKitTests/TreeSitterWorkerTests.swift` seeds a real, readable file just outside the workspace root via a `..`-containing `file_path`, and asserts zero rows in `ts_chunks` — a genuine discriminating test, not a missing-path stand-in.
+- Diff is scoped exactly to the task: `TreeSitterWorker.swift`, its test file, and the two kanban bookkeeping files. No unrelated changes.

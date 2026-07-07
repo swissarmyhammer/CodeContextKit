@@ -36,10 +36,27 @@ comments:
 
     Task is done and green. Leaving in `doing` per /implement process — ready for /review.
   timestamp: 2026-07-05T16:01:34.778675+00:00
+- actor: wballard
+  id: 01kwshym5vas4ng2b5rkq898zz
+  text: |-
+    ## Review Findings (2026-07-05 11:17) — round 1, scope HEAD~1..HEAD (commit 8d1c255)
+
+    Ran `mcp__sah__review` op `review sha` on `HEAD~1..HEAD`. Engine returned 5 confirmed candidate findings (1 refuted internally, 30 checks attempted). Verified every candidate against `git diff HEAD~1..HEAD` before applying any of them, per this round's scope constraints:
+
+    1. `LspSession.swift:48` (rename `LspSession`→`LSPSession`) — dropped: diff hunks for this file only touch lines 216-233 and 289-409 (new `prepareRenameAndRename`/rename-lock additions); the type declaration at line 48 predates this commit. Also an explicit established-convention exception (Lsp casing is not to be flagged).
+    2. `LspSupervisor.swift:39` (rename `LspSupervisor`→`LSPSupervisor`) — dropped: this file's only diff hunk touches the `ServerStatus` struct's `Codable` conformance near line 9; the type declaration at line 39 is untouched. Same established-convention exception applies.
+    3. `LspSupervisor.swift:160` (duplicate logging vs line 221) — dropped: both cited lines are outside this commit's diff hunk (untouched pre-existing code).
+    4. `LiveOpsCore.swift:429` (duplicate pattern in `liveReferences` vs `liveImplementations` at 611-620) — dropped: this commit's only changes to `LiveOpsCore.swift` are access-level/doc-comment edits to `cascade`, `syncLiveDocument`, and `pointRange` (lines ~166-171, ~775-784, ~829-834); lines 429-440 and 611-620 are untouched pre-existing code.
+    5. `LiveOpsCore.swift:520` (duplicate "find symbol row + fetch callers" pattern, cited as also appearing in `LiveOpsExtended.indexedInboundCalls`) — dropped: the anchor line (520) is untouched pre-existing code in `LiveOpsCore.swift`, and a full fix would require editing that untouched method, which is out of this round's scope. (Note for a future round: the new `indexedInboundCalls` in `LiveOpsExtended.swift`, actually at lines ~374-381 not 186-190 as cited, does structurally mirror `tryLspIndexReferences`'s row/callers lookup — worth a follow-up reuse pass if this pattern grows a third call site.)
+
+    All 5 candidates target lines this commit's diff did not touch, or fall under the established Lsp-casing convention exception. Nothing in the new files (`Sources/CodeContextKit/Ops/LiveOpsExtended.swift`, `Tests/CodeContextKitTests/LiveOpsExtendedTests.swift`) or in the actually-changed lines of `LSPDaemon.swift`, `Wire.swift`, `LiveOpsCore.swift`, `LspSession.swift`, `LspSupervisor.swift`, or `FakeLanguageServerConnection.swift` drew a confirmed finding.
+
+    **Verdict: clean for this round.** Moved `doing` → `review` → `done`.
+  timestamp: 2026-07-05T16:31:58.139806+00:00
 depends_on:
 - 01KWJ3XESQSZF6MJ2YHES8QV65
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9a80
 title: 'Remaining live ops: codeActions, renameEdits, inboundCalls, workspaceSymbols, lspStatus'
 ---
 ## What

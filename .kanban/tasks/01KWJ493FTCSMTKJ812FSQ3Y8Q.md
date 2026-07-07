@@ -31,10 +31,14 @@ comments:
 
     Final state: swift build clean (zero warnings), swift test --filter LanguageModuleTests 51/51 passing (fresh run). Task remains in doing for /review.
   timestamp: 2026-07-05T19:03:27.899534+00:00
+- actor: wballard
+  id: 01kwsvf4c8ksnqg18g4h4ky64e
+  text: 'Round 1 review (scope: HEAD~1..HEAD, commit ebbdb0b) — clean. Engine attempted 15 checks against the new tree-sitter-only format modules (SQL, JSON, YAML, Markdown, Bash) plus the touched lines in Languages.swift, LanguageModule.swift, LanguageModuleTests.swift, Package.swift, and Package.resolved. Zero findings, zero confirmed, zero refuted. Moved doing → review → done.'
+  timestamp: 2026-07-05T19:18:16.200472+00:00
 depends_on:
 - 01KWJ3PSVZTXYZDX1ASZ3GN09M
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: 9c80
 title: Tree-sitter-only format modules (sql, json, yaml, markdown, bash)
 ---
 ## What

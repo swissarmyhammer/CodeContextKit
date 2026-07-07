@@ -80,8 +80,19 @@ comments:
 
     Final state: build clean (zero new warnings), full `swift test` green (473/473, 37/37 suites), diff scoped to Tests/CodeContextKitTests/ConnectionTests.swift only. Task remains in `doing` per the implement skill's process, ready for `/review`.
   timestamp: 2026-07-06T14:21:17.401157+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: wballard
+  id: 01kwvxef5emnh5sxvb4af8x3n3
+  text: |-
+    Round 1 review (2026-07-06 09:27), scope HEAD~1..HEAD (commit 93c0b2a): clean, 0 findings across all validators (15 attempted, 0 confirmed, 0 refuted).
+
+    Confirmed against `git diff HEAD~1..HEAD` that the commit touches only Tests/CodeContextKitTests/ConnectionTests.swift: adds the private `withRetryOnSpawnContention<T: Sendable>` helper (catches `CodeContextError.timeout` once, retries the operation exactly once via a fresh `withConnection` subprocess spawn) and its single call site wrapping `requestReceivesItsScriptedTypedResponse()`. No other tests or call sites touched.
+
+    Verification per the task/implementer notes: 26/26 clean runs during implementation including concurrent-stress testing, plus independent re-verification (5/5 ConnectionTests runs, 4/4 full-suite runs, retry path directly observed firing and recovering in a live run). Alternative of raising the timeout was empirically ruled out (60s/90s tested, failure rate flat ~12-13%) before choosing the retry approach — documented in the new code comment.
+
+    Moving to done.
+  timestamp: 2026-07-06T14:31:20.494071+00:00
+position_column: done
+position_ordinal: a280
 title: ConnectionTests.requestReceivesItsScriptedTypedResponse flaky timeout under load (2/5 full-suite runs)
 ---
 Tests/CodeContextKitTests/ConnectionTests.swift:138-139
