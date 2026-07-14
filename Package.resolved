@@ -1,5 +1,5 @@
 {
-  "originHash" : "3f80ad483be8dbe1e0f5b7e0fc13007c8fa0d4d676b6ab900a2e50cbcd00b602",
+  "originHash" : "41f43b78e729665fd5333b2474e54f9de32ada1413eb903c9e70fe194527e911",
   "pins" : [
     {
       "identity" : "foundationmodelsrouter",
@@ -35,6 +35,15 @@
       "state" : {
         "branch" : "foundationmodels-fixes",
         "revision" : "bc8a7b5efa28059f9725a8dbf89d780329db93d1"
+      }
+    },
+    {
+      "identity" : "rankkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swissarmyhammer/RankKit",
+      "state" : {
+        "branch" : "main",
+        "revision" : "3f1ab081a9183bd9bee1ca05c35b97f8fef9eb4a"
       }
     },
     {

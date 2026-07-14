@@ -96,7 +96,7 @@ let package = Package(
     ],
     dependencies: [
         // Referenced by URL rather than local path deliberately: RankKit (the
-        // path dependency below) also depends on FoundationModelsRouter by
+        // dependency below) also depends on FoundationModelsRouter by
         // this exact URL — by CI necessity, see RankKit's Package.swift — and
         // SwiftPM rejects one package identity ('foundationmodelsrouter')
         // reached through two different origins (URL vs. path); today it's a
@@ -106,7 +106,13 @@ let package = Package(
         // co-development of the sibling checkout, use
         // `swift package edit foundationmodelsrouter --path ../FoundationModelsRouter`.
         .package(url: "https://github.com/swissarmyhammer/FoundationModelsRouter", branch: "main"),
-        .package(path: "../RankKit"),
+        // Referenced by URL for the same reason as FoundationModelsRouter
+        // above (the family CI convention: the shared workflow only checks
+        // out the calling repo, so a `../RankKit` path dependency would never
+        // resolve there — see RankKit's Package.swift). For local
+        // co-development of the sibling checkout, use
+        // `swift package edit rankkit --path ../RankKit`.
+        .package(url: "https://github.com/swissarmyhammer/RankKit", branch: "main"),
         // Pinned exact rather than `from:`: SwiftTreeSitter is still pre-1.0,
         // where ChimeHQ has made breaking API changes across minor versions,
         // so an open `from:` range could silently pull in a breaking update.
