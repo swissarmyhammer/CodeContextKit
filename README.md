@@ -1,5 +1,7 @@
 # CodeContextKit
 
+[![CI](https://github.com/swissarmyhammer/CodeContextKit/actions/workflows/ci.yml/badge.svg)](https://github.com/swissarmyhammer/CodeContextKit/actions/workflows/ci.yml)
+
 In-process code intelligence for Swift: one actor that indexes a workspace,
 supervises its language servers, and answers questions about the code.
 
