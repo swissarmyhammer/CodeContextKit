@@ -28,8 +28,12 @@ comments:
 
     Note for FSEvents-alive environments: probe adds ~<1.5s to the test when delivery works; the test itself is now tolerant of delivery latency up to the 15s deadline.
   timestamp: 2026-07-14T10:59:15.054003+00:00
-position_column: doing
-position_ordinal: '80'
+- actor: claude-code
+  id: 01kxg4xvxk6zdpfywzgdvppxs8
+  text: 'Review verdict (2026-07-14): CLEAN. Engine run `review sha HEAD~1..HEAD` (checkpoint 5daabfd, "fix(test): gate real-FSEvents watcher test on runtime deliverability probe") returned 0 findings (14 checks attempted, 1 candidate refuted, 0 failed). Test-only change in Tests/CodeContextKitTests/WatcherTests.swift adding a runtime FSEvents-deliverability probe via ConditionTrait; full suite 440 pass / 0 fail / 1 explicit skip; adversarial double-check PASSed. Task moved review -> done.'
+  timestamp: 2026-07-14T11:06:53.747556+00:00
+position_column: done
+position_ordinal: a480
 title: 'WatcherTests.realFSEventsDetectsFileWriteAndMarksItDirty fails: FSEvents not delivered in sandbox'
 ---
 Tests/CodeContextKitTests/WatcherTests.swift:359
