@@ -1,5 +1,5 @@
 import Foundation
-import RankKit
+import FoundationModelsRanker
 
 /// The relative weight of each ranking signal
 /// `SearchCode.run(corpus:embedder:query:topK:weights:)` fuses via

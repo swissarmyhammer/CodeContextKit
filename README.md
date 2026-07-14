@@ -49,5 +49,5 @@ Add to your `Package.swift` dependencies (requires macOS 27):
 
 Design and porting notes live in [plan.md](plan.md). Hybrid search ranking
 (BM25 + trigram + cosine, fused with RRF) comes from the sibling
-[RankKit](https://github.com/swissarmyhammer/RankKit) package, and embeddings
+[FoundationModelsRanker](https://github.com/swissarmyhammer/FoundationModelsRanker) package, and embeddings
 from [FoundationModelsRouter](https://github.com/swissarmyhammer/FoundationModelsRouter).

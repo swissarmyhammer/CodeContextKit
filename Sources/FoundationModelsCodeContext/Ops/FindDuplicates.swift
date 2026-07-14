@@ -1,5 +1,5 @@
 import Foundation
-import RankKit
+import FoundationModelsRanker
 
 /// One chunk's location and text, referenced from a `FindDuplicatesResult`
 /// either as a group's source or as one of its duplicate matches.
@@ -149,7 +149,7 @@ public struct FindDuplicatesResult: Sendable, Equatable {
 /// Reuses `SearchCorpus`'s cached embedding matrix rather than re-scanning
 /// `ts_chunks`: each meta-type partition's candidate sub-matrix is gathered
 /// once (via `SearchCorpusSnapshot.gatherSubMatrix(rowIndices:)`) and then
-/// scored against with one `RankKit.CosineScoring.matvecScores(matrix:rowCount:dimension:queryVector:)`
+/// scored against with one `FoundationModelsRanker.CosineScoring.matvecScores(matrix:rowCount:dimension:queryVector:)`
 /// call per source chunk in that partition, so both workspace scope (every
 /// eligible chunk in a partition, scored against that one shared sub-matrix)
 /// and file scope (only `file`'s eligible chunks as sources, scored against
@@ -444,7 +444,7 @@ extension SearchCorpusSnapshot {
     /// Gathers the embedding rows at `rowIndices` into one contiguous,
     /// row-major `rowIndices.count × embeddingDimension` sub-matrix — the
     /// `FindDuplicatesOps` partition-scoped input to
-    /// `RankKit.CosineScoring.matvecScores(matrix:rowCount:dimension:queryVector:)`, built
+    /// `FoundationModelsRanker.CosineScoring.matvecScores(matrix:rowCount:dimension:queryVector:)`, built
     /// once per partition and then reused across every source chunk in that
     /// partition rather than re-gathered per source.
     ///

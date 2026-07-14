@@ -56,7 +56,7 @@ consequences here:
 | Workspace lifecycle, SQLite schema, cleanup, invalidation | `crates/swissarmyhammer-code-context/{workspace,db,cleanup,invalidation}.rs` | `Sources/FoundationModelsCodeContext/Index/` |
 | Tree-sitter registry + semantic chunking | `crates/swissarmyhammer-treesitter/{language,chunk}.rs` | `Sources/FoundationModelsCodeContext/TreeSitter/` |
 | TS call-edge heuristic | `crates/swissarmyhammer-code-context/ts_callgraph.rs` | `Sources/FoundationModelsCodeContext/TreeSitter/` |
-| Hybrid ranker (BM25 + trigram + cosine, RRF) | `crates/swissarmyhammer-search/` | sibling [RankKit](https://github.com/swissarmyhammer/RankKit) package; `Sources/FoundationModelsCodeContext/Search/` keeps only corpus glue |
+| Hybrid ranker (BM25 + trigram + cosine, RRF) | `crates/swissarmyhammer-search/` | sibling [FoundationModelsRanker](https://github.com/swissarmyhammer/FoundationModelsRanker) package; `Sources/FoundationModelsCodeContext/Search/` keeps only corpus glue |
 | LSP transport, session, daemon, supervisor | `crates/swissarmyhammer-lsp/{client,session,daemon,supervisor,types,diagnostics}.rs` | `Sources/FoundationModelsCodeContext/LSP/` |
 | LSP background indexer (documentSymbol + call hierarchy → SQLite) | `crates/swissarmyhammer-code-context/{lsp_worker,lsp_communication,lsp_indexer}.rs` | `Sources/FoundationModelsCodeContext/Index/` |
 | Layered cascade (LiveLsp → LspIndex → TreeSitter → None) | `crates/swissarmyhammer-code-context/layered_context.rs` | `Sources/FoundationModelsCodeContext/Ops/` |
@@ -77,7 +77,7 @@ FoundationModelsCodeContext/
     Index/                 // SQLite store, walker/reconciler, workers, watcher
     TreeSitter/            // chunker, ts call edges, AST query (generic over Languages/)
     Search/                // corpus snapshot + Hit/Signals typealiases (BM25, trigram,
-                           // cosine, RRF fusion live in the sibling RankKit package)
+                           // cosine, RRF fusion live in the sibling FoundationModelsRanker package)
     LSP/                   // transport, session, daemon, supervisor, registry
     Diagnostics/           // diagnose, settle, report types
     Ops/                   // one file per operation, layered cascade
@@ -90,7 +90,7 @@ FoundationModelsCodeContext/
 ### Dependencies
 
 - **FoundationModelsRouter** (GitHub URL, `main` — spelled identically to
-  RankKit's declaration so the shared package identity resolves to a single
+  FoundationModelsRanker's declaration so the shared package identity resolves to a single
   origin; see the comment in `Package.swift`) — embeddings via `RoutedEmbedder`
   (`embed([String]) async throws -> [[Float]]`, L2-normalized, runtime `dimension`).
 - **SwiftTreeSitter** (ChimeHQ) + per-language grammar packages.

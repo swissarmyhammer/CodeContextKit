@@ -1,6 +1,6 @@
 import Foundation
 import GRDB
-import RankKit
+import FoundationModelsRanker
 
 /// A cached, contiguous snapshot of one workspace's `ts_chunks` table, ready
 /// for BM25/trigram keyword scoring and `vDSP_mmul` cosine scoring — the
@@ -61,7 +61,7 @@ public struct SearchCorpusSnapshot: Sendable {
     /// Each chunk's precomputed BM25/trigram statistics — `symbolPaths[i]`
     /// as the primary field (weighted `BM25.primaryFieldWeight`), `texts[i]`
     /// as the body field (weighted `BM25.bodyFieldWeight`) — positionally
-    /// aligned with `chunkIds`. `RankKit.RankedDocument` carries the
+    /// aligned with `chunkIds`. `FoundationModelsRanker.RankedDocument` carries the
     /// weighted term frequency, term set, document length, and both trigram
     /// sets the BM25/trigram scoring stages consume.
     let rankedDocuments: [RankedDocument]
@@ -179,7 +179,7 @@ public actor SearchCorpus {
 
     /// Folds `rows` into a `SearchCorpusSnapshot`: decodes embeddings into
     /// one contiguous matrix, and precomputes each row's BM25/trigram data
-    /// as a `RankKit.RankedDocument` (symbol path as the primary field, body
+    /// as a `FoundationModelsRanker.RankedDocument` (symbol path as the primary field, body
     /// text as the body field).
     private static func build(rows: [ChunkRow]) -> SearchCorpusSnapshot {
         let embeddingDimension = rows.lazy.compactMap { $0.embedding.map { EmbeddingCodec.decode($0).count } }.first ?? 0

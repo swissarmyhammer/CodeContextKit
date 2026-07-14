@@ -1,6 +1,6 @@
 import Foundation
 import GRDB
-import RankKit
+import FoundationModelsRanker
 import Testing
 
 @testable import FoundationModelsCodeContext
@@ -12,7 +12,7 @@ private func normalized(_ vector: [Float]) -> [Float] {
     return vector.map { $0 / magnitude }
 }
 
-/// Tests for `RankKit.CosineScoring.matvecScores(matrix:rowCount:dimension:queryVector:)`
+/// Tests for `FoundationModelsRanker.CosineScoring.matvecScores(matrix:rowCount:dimension:queryVector:)`
 /// (the primitive `SearchCorpusSnapshot.cosineScores(queryVector:)` wraps):
 /// the `vDSP_mmul`-backed matvec against a scalar dot-product reference, plus
 /// its documented degenerate-input behavior.
