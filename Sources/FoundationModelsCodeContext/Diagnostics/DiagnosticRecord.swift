@@ -9,24 +9,24 @@ import Foundation
 /// Swift port reuses `LSPRange` (already `Codable`/`Sendable`/`Equatable` in
 /// this same module — see `LSPTypes.swift`) rather than introducing an
 /// equivalent wrapper with nothing left to convert from.
-struct DiagnosticRecord: Sendable, Equatable {
+public struct DiagnosticRecord: Sendable, Equatable {
     /// The file this diagnostic applies to, relative to the workspace root.
-    let path: String
+    public let path: String
 
     /// The span within `path` this diagnostic applies to.
-    let range: LSPRange
+    public let range: LSPRange
 
     /// The diagnostic's severity.
-    let severity: DiagnosticSeverity
+    public let severity: DiagnosticSeverity
 
     /// The human-readable diagnostic message.
-    let message: String
+    public let message: String
 
     /// The server's diagnostic code (e.g. `"E0308"`), if any.
-    let code: String?
+    public let code: String?
 
     /// The tool that produced this diagnostic (e.g. `"rustc"`), if any.
-    let source: String?
+    public let source: String?
 
     /// The symbol enclosing this diagnostic's range, if known.
     ///
@@ -35,7 +35,7 @@ struct DiagnosticRecord: Sendable, Equatable {
     /// enriching consumer it doesn't itself provide. No such enrichment step
     /// exists in this port (yet), so this field is carried for shape parity
     /// with the Rust reference and always `nil` today.
-    let containingSymbol: String?
+    public let containingSymbol: String?
 
     /// Creates a diagnostic record.
     /// - Parameters:
@@ -93,12 +93,12 @@ struct DiagnosticRecord: Sendable, Equatable {
 /// counts only `.error`/`.warning`, matching the Rust reference and this
 /// task's "broken" definition (`errors + warnings > 0`) used to decide
 /// whether a dependent folds into a report.
-struct Counts: Sendable, Equatable {
+public struct Counts: Sendable, Equatable {
     /// The number of `.error`-severity records.
-    let errors: Int
+    public let errors: Int
 
     /// The number of `.warning`-severity records.
-    let warnings: Int
+    public let warnings: Int
 
     /// Counts `records`' `.error`/`.warning` severities; `.information`/`.hint` are ignored.
     /// - Parameter records: The records to count.
@@ -127,19 +127,24 @@ struct Counts: Sendable, Equatable {
 /// type here rather than kept as a separate wrapper, since this Swift port
 /// has exactly one public entry point (`DiagnosticsOps.diagnostics(...)`)
 /// that always wants both together.
+///
+/// A sibling-consumable value type: `records`, `counts`, and `pending` are
+/// all `public` so a downstream module can read a report returned across the
+/// package boundary — e.g. via `CodeContext.diagnostics(...)` — with a plain
+/// `import FoundationModelsCodeContext`, no `@testable` required.
 public struct DiagnosticsReport: Sendable, Equatable {
     /// Every diagnostic record in this report, targets first (in query
     /// order), then folded-in broken dependents (ranked errors-then-warnings),
     /// truncated to the per-report cap.
-    let records: [DiagnosticRecord]
+    public let records: [DiagnosticRecord]
 
     /// Error/warning counts across `records`.
-    let counts: Counts
+    public let counts: Counts
 
     /// `true` when the report may be incomplete: the settle engine hit its
     /// hard timeout before quiescing, or the language server is running but
     /// not yet ready to answer.
-    let pending: Bool
+    public let pending: Bool
 
     /// Creates a report, deriving `counts` from `records`.
     /// - Parameters:
