@@ -2,7 +2,7 @@ import Foundation
 import FoundationModelsCodeContext
 import FoundationModelsRouter
 
-/// # Runnable demo: multi-root `CodeContextManager`.
+/// A runnable executable demonstrating multi-root `CodeContextManager` lifecycle and fan-out queries.
 ///
 /// The second "way in" to this package (see plan.md's Goal, and the sibling `CodeContextExample`'s
 /// single-root walkthrough): point it at a *parent* directory holding several repositories and it

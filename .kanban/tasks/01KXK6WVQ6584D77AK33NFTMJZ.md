@@ -24,40 +24,21 @@ comments:
 
     Final state: `swift build` — exit 0, zero warnings attributable to ManagerExample (only pre-existing unrelated mlx-swift_Cmlx bundle-plugin warning). `swift test` — 485/485 passing on the latest run. Leaving in doing for /review.
   timestamp: 2026-07-15T20:29:24.049478+00:00
+- actor: claude-code
+  id: 01kxkrbwfpfrfkr1qpa9y0fzdm
+  text: |-
+    Pulled back from review to doing to address open review finding. Fixed Examples/ManagerExample/main.swift: replaced the top-of-file doc comment's Markdown heading first line (`/// # Runnable demo: multi-root \`CodeContextManager\`.`) with a single-sentence summary ending in a period: `/// A runnable executable demonstrating multi-root \`CodeContextManager\` lifecycle and fan-out queries.`. Checked off the review finding on the task.
+
+    Re-verified fresh: `swift build` exit 0 (only the pre-existing unrelated mlx-swift_Cmlx bundle-plugin warning remains); `swift test` 485/485 passing across 41 suites. `git diff` confirms this is the only change in the file — no scope creep. Spawned adversarial double-check to confirm before handing back for re-review.
+  timestamp: 2026-07-15T20:44:19.318158+00:00
+- actor: claude-code
+  id: 01kxkrekq96wdwx0b8gp7d5zax
+  text: 'Adversarial double-check: PASS, no findings. Confirmed doc-comment first line is now a proper single-sentence summary (no heading marker), rest of doc block still reads coherently, `swift build` exit 0 with only the pre-existing unrelated mlx-swift_Cmlx warning, `swift test` 485/485 passing, and git diff scoped to exactly the one doc-comment line. Leaving task in doing, ready for re-review.'
+  timestamp: 2026-07-15T20:45:48.649461+00:00
 depends_on:
 - 01KXK6VNT8YNZYEJB0KMM19ANQ
 position_column: doing
 position_ordinal: '80'
 title: 'Add example program: multi-root CodeContextManager'
 ---
-## What
-Add the second "way in" example: an executable demonstrating `CodeContextManager` over several repos.
-
-- `Package.swift`: add `.executableTarget(name: "ManagerExample", dependencies: [.target(name: packageName), .product(name: "FoundationModelsRouter", package: "FoundationModelsRouter")], path: "Examples/ManagerExample")`. The Router product is required for embedder resolution — same rationale as the CodeContextExample task: the library ships no embedder factory; the host resolves a `RoutedEmbedder` and wraps it in `RoutedEmbedderAdapter`.
-- `Examples/ManagerExample/main.swift`: take a parent directory as `CommandLine.arguments[1]` and an optional query argument, then:
-  1. resolve the embedder via FoundationModelsRouter and create `CodeContextManager(embedder:)`
-  2. `RootDiscovery.discoverRoots(under: parent)` — print each discovered repo root
-  3. open each via `manager.context(for:)`; print each root's ready state from `manager.state`
-  4. demonstrate lazy routing: `try await manager.context(containing:)` for one file path inside a discovered repo
-  5. run the fan-out `manager.searchCode(query:)` and print `Rooted` results (root + relative path + score) plus any `FanOutFailure`s
-  6. `await manager.shutdown()`
-
-Same constraints as the standalone example: public API of the two packages only (no `@testable`), thin script, exists to compile-verify and document the manager entry point.
-
-## Acceptance Criteria
-- [x] `swift build` builds the `ManagerExample` target with no warnings
-- [x] The source demonstrates discovery, explicit open, lazy `context(containing:)`, fan-out search with root-qualified output, and shutdown — all via public API (no `@testable`)
-
-## Tests
-- [x] `swift build` exits 0 with the new target included — the build is the automated verification (a live run needs Apple Intelligence + real LSP daemons, so it is a documented local smoke step in the example's header comment, NOT an acceptance gate)
-- [x] `swift test` still passes
-
-## Workflow
-- Use `/tdd` where applicable; for this example the build itself is the failing-then-passing check.
-
-## Implementation notes
-- Added `.executableTarget(name: "ManagerExample", ...)` to `Package.swift`, mirroring `CodeContextExample`'s target shape.
-- `Examples/ManagerExample/main.swift` resolves a `RoutedEmbedder` via `FoundationModelsRouter`, creates `CodeContextManager(embedder:)`, discovers roots via `RootDiscovery.discoverRoots(under:)`, opens each explicitly via `manager.context(for:)`, prints each root's `isReady` from `manager.state.contexts`, demonstrates `manager.context(containing:)` against a sample file, fans out `manager.searchCode(query:)` printing root-qualified `Rooted<SearchCodeMatch>` results (root + relative `filePath` + `hit.score`) plus any `FanOutFailure`s, then calls `manager.shutdown()` / `profile.release()`.
-- Verified fresh: `swift build` exit 0 with zero warnings attributable to the new target (only a pre-existing, unrelated `mlx-swift_Cmlx` bundle-plugin warning remains). `swift test` 485/485 passing.
-- Adversarial double-check review: PASS.
-- Noted (and filed as a separate follow-up task, 01KXKQGX224NSJ0E59667528J0) an unrelated pre-existing intermittent flake in `ConnectionTests.aRequestTimeoutThatPropagatesUncaughtStillClosesTheConnectionAndReapsTheProcess()` discovered during verification — out of scope for this task (this diff touches only `Package.swift` and the new `Examples/ManagerExample/` files).
+## What\nAdd the second \"way in\" example: an executable demonstrating `CodeContextManager` over several repos.\n\n- `Package.swift`: add `.executableTarget(name: \"ManagerExample\", dependencies: [.target(name: packageName), .product(name: \"FoundationModelsRouter\", package: \"FoundationModelsRouter\")], path: \"Examples/ManagerExample\")`. The Router product is required for embedder resolution — same rationale as the CodeContextExample task: the library ships no embedder factory; the host resolves a `RoutedEmbedder` and wraps it in `RoutedEmbedderAdapter`.\n- `Examples/ManagerExample/main.swift`: take a parent directory as `CommandLine.arguments[1]` and an optional query argument, then:\n  1. resolve the embedder via FoundationModelsRouter and create `CodeContextManager(embedder:)`\n  2. `RootDiscovery.discoverRoots(under: parent)` — print each discovered repo root\n  3. open each via `manager.context(for:)`; print each root's ready state from `manager.state`\n  4. demonstrate lazy routing: `try await manager.context(containing:)` for one file path inside a discovered repo\n  5. run the fan-out `manager.searchCode(query:)` and print `Rooted` results (root + relative path + score) plus any `FanOutFailure`s\n  6. `await manager.shutdown()`\n\nSame constraints as the standalone example: public API of the two packages only (no `@testable`), thin script, exists to compile-verify and document the manager entry point.\n\n## Acceptance Criteria\n- [x] `swift build` builds the `ManagerExample` target with no warnings\n- [x] The source demonstrates discovery, explicit open, lazy `context(containing:)`, fan-out search with root-qualified output, and shutdown — all via public API (no `@testable`)\n\n## Tests\n- [x] `swift build` exits 0 with the new target included — the build is the automated verification (a live run needs Apple Intelligence + real LSP daemons, so it is a documented local smoke step in the example's header comment, NOT an acceptance gate)\n- [x] `swift test` still passes\n\n## Workflow\n- Use `/tdd` where applicable; for this example the build itself is the failing-then-passing check.\n\n## Implementation notes\n- Added `.executableTarget(name: \"ManagerExample\", ...)` to `Package.swift`, mirroring `CodeContextExample`'s target shape.\n- `Examples/ManagerExample/main.swift` resolves a `RoutedEmbedder` via `FoundationModelsRouter`, creates `CodeContextManager(embedder:)`, discovers roots via `RootDiscovery.discoverRoots(under:)`, opens each explicitly via `manager.context(for:)`, prints each root's `isReady` from `manager.state.contexts`, demonstrates `manager.context(containing:)` against a sample file, fans out `manager.searchCode(query:)` printing root-qualified `Rooted<SearchCodeMatch>` results (root + relative `filePath` + `hit.score`) plus any `FanOutFailure`s, then calls `manager.shutdown()` / `profile.release()`.\n- Verified fresh: `swift build` exit 0 with zero warnings attributable to the new target (only a pre-existing, unrelated `mlx-swift_Cmlx` bundle-plugin warning remains). `swift test` 485/485 passing.\n- Adversarial double-check review: PASS.\n- Noted (and filed as a separate follow-up task, 01KXKQGX224NSJ0E59667528J0) an unrelated pre-existing intermittent flake in `ConnectionTests.aRequestTimeoutThatPropagatesUncaughtStillClosesTheConnectionAndReapsTheProcess()` discovered during verification — out of scope for this task (this diff touches only `Package.swift` and the new `Examples/ManagerExample/` files).\n\n## Review Findings (2026-07-15 15:34)\n\n- [x] `Examples/ManagerExample/main.swift:3` — First line of a doc comment should be a single-sentence summary ending in a period, not a Markdown heading. Replace the heading with a single-sentence summary, such as: `/// A runnable executable demonstrating multi-root CodeContextManager lifecycle and fan-out queries.`. Fixed: replaced the `# Runnable demo: multi-root \`CodeContextManager\`.` heading with `/// A runnable executable demonstrating multi-root \`CodeContextManager\` lifecycle and fan-out queries.`\n
