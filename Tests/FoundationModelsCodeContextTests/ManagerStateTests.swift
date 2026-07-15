@@ -4,11 +4,13 @@ import Testing
 
 @testable import FoundationModelsCodeContext
 
-/// Tests for `ManagerState`, the `@MainActor @Observable` aggregate that tracks one
-/// `CodeContextState` per open root. Every publisher is exercised directly against real
-/// `CodeContextState` instances (no real `CodeContext`, workers, or LSP daemons involved) — these
-/// tests only prove the aggregate's own publish/observe/derive contract, reusing the
-/// `IndexProgress`/`ServerStatus` fixtures and patterns from `CodeContextStateTests`.
+/// Tests for `ManagerState`, the aggregate that tracks open roots.
+///
+/// `ManagerState` is the `@MainActor @Observable` aggregate that tracks one `CodeContextState`
+/// per open root. Every publisher is exercised directly against real `CodeContextState`
+/// instances (no real `CodeContext`, workers, or LSP daemons involved) — these tests only prove
+/// the aggregate's own publish/observe/derive contract, reusing the `IndexProgress`/`ServerStatus`
+/// fixtures and patterns from `CodeContextStateTests`.
 struct ManagerStateTests {
     /// Workspace root fixtures; no test in this suite touches the filesystem.
     private static let firstRoot = URL(fileURLWithPath: "/tmp/manager-state-tests/b-root")

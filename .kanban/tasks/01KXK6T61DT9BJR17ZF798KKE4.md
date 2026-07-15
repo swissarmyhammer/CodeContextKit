@@ -13,27 +13,15 @@ comments:
   id: 01kxkch71yb0basb4amc4t27yh
   text: 'really-done verification: `swift build` clean (0 warnings), full `swift test` suite passed 464/464 tests across 39 suites (0 failures). Adversarial double-check agent returned PASS — confirmed acceptance criteria met, conventions faithfully mirror CodeContextState, no correctness bugs, tests substantive (not tautological). Leaving task in doing, green, ready for /review.'
   timestamp: 2026-07-15T17:17:31.070401+00:00
+- actor: claude-code
+  id: 01kxkdang8gn1jv12t8cg0zckx
+  text: |-
+    Addressed all 3 review findings (doc-comment style): condensed the first `///` line of the `contexts` and `roots` property doc comments in Sources/FoundationModelsCodeContext/ManagerState.swift, and the top-of-file doc comment in Tests/FoundationModelsCodeContextTests/ManagerStateTests.swift, to complete one-sentence summaries ending in a period, each followed by a blank `///` line and the original elaboration moved below. No wording content was lost — text was re-split, not rewritten. Checked off all three findings and the original acceptance/test checkboxes on the task.
+
+    really-done verification: `swift build` clean (0 warnings), full `swift test` 464/464 passed across 39 suites, `swift test --filter ManagerStateTests` 12/12 passed. Adversarial double-check agent returned PASS — confirmed the diff is doc-comment-only (4 files: ManagerState.swift, ManagerStateTests.swift, plus the two kanban task bookkeeping files), implementation of contexts/roots/isReady/publishOpened/publishClosed unchanged, and all three flagged doc comments now conform. Leaving task in doing, green, ready for /review.
+  timestamp: 2026-07-15T17:31:25.064164+00:00
 position_column: doing
 position_ordinal: '80'
 title: 'Add ManagerState: @Observable aggregate of per-root CodeContextState'
 ---
-## What
-Create `Sources/FoundationModelsCodeContext/ManagerState.swift` with a `@MainActor @Observable public final class ManagerState`, mirroring `CodeContextState`'s conventions exactly (all stored properties `private(set)`, mutations only through `nonisolated` async `publish*` methods that hop to the main actor via `MainActor.run` and are awaitable):
-
-- `public private(set) var contexts: [URL: CodeContextState]` — one entry per open root, keyed by standardized root URL.
-- `public var roots: [URL]` — computed, sorted by path, for stable SwiftUI iteration.
-- `public var isReady: Bool` — computed: `contexts.values.allSatisfy(\.isReady)` (vacuously true when empty; document this the same way `CodeContextState.isReady` documents its vacuous initial state). Because each `CodeContextState` is itself `@Observable`, reading `isReady` inside a SwiftUI view tracks through to every child state.
-- `public nonisolated func publishOpened(root: URL, state: CodeContextState) async`
-- `public nonisolated func publishClosed(root: URL) async`
-
-## Acceptance Criteria
-- [ ] `publishOpened`/`publishClosed` add and remove entries; `roots` stays sorted
-- [ ] `isReady` is true when empty, false while any child's indexing/servers are unsettled, true once every child is ready
-- [ ] All stored properties are `private(set)`; the only mutation paths are the publish methods
-
-## Tests
-- [ ] `Tests/FoundationModelsCodeContextTests/ManagerStateTests.swift`: open/close bookkeeping, sorted `roots`, `isReady` aggregation driven by publishing real `IndexProgress`/`ServerStatus` values into child `CodeContextState` instances (reuse the patterns from the existing `CodeContextState` tests)
-- [ ] `swift test --filter ManagerStateTests` passes
-
-## Workflow
-- Use `/tdd` — write failing tests first, then implement to make them pass.
+## What\nCreate `Sources/FoundationModelsCodeContext/ManagerState.swift` with a `@MainActor @Observable public final class ManagerState`, mirroring `CodeContextState`'s conventions exactly (all stored properties `private(set)`, mutations only through `nonisolated` async `publish*` methods that hop to the main actor via `MainActor.run` and are awaitable):\n\n- `public private(set) var contexts: [URL: CodeContextState]` — one entry per open root, keyed by standardized root URL.\n- `public var roots: [URL]` — computed, sorted by path, for stable SwiftUI iteration.\n- `public var isReady: Bool` — computed: `contexts.values.allSatisfy(\\.isReady)` (vacuously true when empty; document this the same way `CodeContextState.isReady` documents its vacuous initial state). Because each `CodeContextState` is itself `@Observable`, reading `isReady` inside a SwiftUI view tracks through to every child state.\n- `public nonisolated func publishOpened(root: URL, state: CodeContextState) async`\n- `public nonisolated func publishClosed(root: URL) async`\n\n## Acceptance Criteria\n- [x] `publishOpened`/`publishClosed` add and remove entries; `roots` stays sorted\n- [x] `isReady` is true when empty, false while any child's indexing/servers are unsettled, true once every child is ready\n- [x] All stored properties are `private(set)`; the only mutation paths are the publish methods\n\n## Tests\n- [x] `Tests/FoundationModelsCodeContextTests/ManagerStateTests.swift`: open/close bookkeeping, sorted `roots`, `isReady` aggregation driven by publishing real `IndexProgress`/`ServerStatus` values into child `CodeContextState` instances (reuse the patterns from the existing `CodeContextState` tests)\n- [x] `swift test --filter ManagerStateTests` passes\n\n## Workflow\n- Use `/tdd` — write failing tests first, then implement to make them pass.\n\n## Review Findings (2026-07-15 12:21)\n\n- [x] `Sources/FoundationModelsCodeContext/ManagerState.swift:16` — The first line of the doc comment does not contain a complete single-sentence summary. The documentation rule requires the first line to be a single-sentence summary ending in a period; this line ends abruptly without completing the sentence. Condense to a complete first-line summary (e.g., `/// One entry per open root, keyed by standardized URL.`), then add a blank `///` line before the elaboration.\n- [x] `Sources/FoundationModelsCodeContext/ManagerState.swift:21` — The first line of the doc comment does not contain a complete single-sentence summary. The documentation rule requires the first line to be a single-sentence summary ending in a period; this line cuts off mid-example without completing the sentence. Condense to a complete first-line summary (e.g., `/// Every open root's standardized URL, sorted by path.`), then add a blank `///` line before the elaboration or example.\n- [x] `Tests/FoundationModelsCodeContextTests/ManagerStateTests.swift:7` — The first line of the doc comment does not contain a complete single-sentence summary. The documentation rule requires the first line to be a single-sentence summary ending in a period; this line ends abruptly without completing the sentence. Either condense to a complete first-line summary (e.g., `/// Tests for `ManagerState`, the aggregate that tracks open roots.`) and add a blank `///` line before elaboration, or restructure to fit the summary on the first line.\n

@@ -13,13 +13,16 @@ import Observation
 @MainActor
 @Observable
 public final class ManagerState {
-    /// One entry per open root, keyed by the root's standardized URL (`URL.standardizedFileURL`)
-    /// so callers can open the same directory via different (but equivalent) path spellings and
-    /// still resolve to the same entry.
+    /// One entry per open root, keyed by standardized URL.
+    ///
+    /// Keyed by the root's standardized URL (`URL.standardizedFileURL`) so callers can open the
+    /// same directory via different (but equivalent) path spellings and still resolve to the
+    /// same entry.
     public private(set) var contexts: [URL: CodeContextState]
 
-    /// Every open root's standardized URL, sorted by path for stable SwiftUI iteration (e.g.
-    /// `ForEach(manager.roots, id: \.self)`).
+    /// Every open root's standardized URL, sorted by path.
+    ///
+    /// Sorted for stable SwiftUI iteration (e.g. `ForEach(manager.roots, id: \.self)`).
     public var roots: [URL] {
         contexts.keys.sorted { $0.path < $1.path }
     }
