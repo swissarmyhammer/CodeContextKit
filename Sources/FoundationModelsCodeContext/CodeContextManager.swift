@@ -217,15 +217,13 @@ public actor CodeContextManager<Connection: LanguageServerConnection> {
     /// The already-open root's context that `standardizedPath` is a descendant of, if any.
     ///
     /// The overlap rule enforced by `context(for:)` guarantees at most one open root can ever be
-    /// an ancestor of a given path, so the first match found is the only one there ever is.
+    /// an ancestor of a given path, so the first match `firstAncestorValue(of:in:)` finds is the
+    /// only one there ever is.
     /// - Parameter standardizedPath: An already-standardized path to check.
     /// - Returns: The already-open root's context that is an ancestor of `standardizedPath`, or
     ///   `nil` if none exists.
     private func openContext(ancestorOf standardizedPath: URL) -> CodeContext<Connection>? {
-        for (openRoot, context) in contexts where Self.isDescendant(standardizedPath, of: openRoot) {
-            return context
-        }
-        return nil
+        firstAncestorValue(of: standardizedPath, in: contexts)
     }
 
     /// The already-open root's context that `standardizedPath` is either equal to or a descendant
@@ -265,8 +263,26 @@ public actor CodeContextManager<Connection: LanguageServerConnection> {
     /// - Returns: The in-flight open task for a still-opening root that `standardizedPath` is a
     ///   descendant of, or `nil` if none exists.
     private func inFlightOpen(ancestorOf standardizedPath: URL) -> Task<CodeContext<Connection>, Error>? {
-        for (pendingRoot, task) in inFlightOpens where Self.isDescendant(standardizedPath, of: pendingRoot) {
-            return task
+        firstAncestorValue(of: standardizedPath, in: inFlightOpens)
+    }
+
+    /// The value in `dictionary` keyed by a root that `standardizedPath` is a descendant of, if
+    /// any — the shared ancestor-lookup logic behind both `openContext(ancestorOf:)` and
+    /// `inFlightOpen(ancestorOf:)`, which previously existed as two near-identical functions
+    /// differing only in which dictionary they scanned (`contexts` vs. `inFlightOpens`) and the
+    /// type of value returned (`CodeContext` vs. `Task`).
+    ///
+    /// The overlap rule enforced by `context(for:)` guarantees at most one key in either
+    /// dictionary can ever be an ancestor of a given path, so the first match found is the only
+    /// one there ever is.
+    /// - Parameters:
+    ///   - standardizedPath: An already-standardized path to check.
+    ///   - dictionary: The root-keyed mapping to scan — typically `contexts` or `inFlightOpens`.
+    /// - Returns: The value keyed by the root that is an ancestor of `standardizedPath`, or `nil`
+    ///   if none exists.
+    private func firstAncestorValue<T>(of standardizedPath: URL, in dictionary: [URL: T]) -> T? {
+        for (root, value) in dictionary where Self.isDescendant(standardizedPath, of: root) {
+            return value
         }
         return nil
     }
