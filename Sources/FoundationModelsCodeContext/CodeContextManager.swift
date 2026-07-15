@@ -281,10 +281,7 @@ public actor CodeContextManager<Connection: LanguageServerConnection> {
     /// - Returns: The value keyed by the root that is an ancestor of `standardizedPath`, or `nil`
     ///   if none exists.
     private func firstAncestorValue<T>(of standardizedPath: URL, in dictionary: [URL: T]) -> T? {
-        for (root, value) in dictionary where Self.isDescendant(standardizedPath, of: root) {
-            return value
-        }
-        return nil
+        dictionary.first { Self.isDescendant(standardizedPath, of: $0.key) }?.value
     }
 
     /// Whether `path` is strictly inside `root` — i.e. `root` is a proper ancestor directory of
