@@ -178,9 +178,9 @@ extension CodeContextManager {
             var failures: [FanOutFailure] = []
             for await (root, outcome) in group {
                 switch outcome {
-                case let .success(values):
+                case .success(let values):
                     perRoot.append((root: root, values: values))
-                case let .failure(error):
+                case .failure(let error):
                     failures.append(FanOutFailure(root: root, message: error.localizedDescription))
                 }
             }
