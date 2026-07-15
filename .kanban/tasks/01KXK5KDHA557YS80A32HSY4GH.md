@@ -21,8 +21,8 @@ comments:
 
     Leaving in doing for /review.
   timestamp: 2026-07-15T15:54:24.635639+00:00
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: a580
 title: Make DiagnosticsReport contents public (records/counts/pending, DiagnosticRecord, Counts)
 ---
 ## What
