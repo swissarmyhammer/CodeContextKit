@@ -296,6 +296,7 @@ public actor ProcessLanguageServerConnection: LanguageServerConnection {
         try await notifyEmpty(method: "initialized")
     }
 
+    /// Sends the `shutdown` request that begins graceful server termination.
     public func shutdown() async throws {
         _ = try await request(method: "shutdown", params: EmptyPayload(), resultType: EmptyPayload?.self)
     }
