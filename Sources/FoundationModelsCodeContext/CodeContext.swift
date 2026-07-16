@@ -29,7 +29,12 @@ public actor CodeContext<Connection: LanguageServerConnection> {
     public nonisolated let state: CodeContextState
 
     /// The workspace root this facade was opened for.
-    private let rootDirectory: URL
+    ///
+    /// Public so sibling packages can learn which root a resolved context is rooted at, and rebase
+    /// context-relative paths (such as every `DiagnosticRecord.path`) onto a root of their own.
+    /// `nonisolated` is safe because this is an immutable `let`: cross-actor reads are
+    /// data-race-free, so consumers can read it without `await`.
+    public nonisolated let rootDirectory: URL
 
     /// The embedder used by the tree-sitter worker's embedding step and by `searchCode(...)`.
     private let embedder: TextEmbedding
