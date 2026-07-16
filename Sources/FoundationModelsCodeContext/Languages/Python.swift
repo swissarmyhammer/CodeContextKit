@@ -64,6 +64,11 @@ public enum PythonLanguage: LanguageModule {
     public static let languageServer: ServerSpec? = ServerSpec(
         command: "pylsp",
         languageIDs: [name],
-        installHint: "Install python-lsp-server: pip install python-lsp-server"
+        installHint: "Install python-lsp-server: pipx install python-lsp-server",
+        installer: ServerSpec.InstallSpec(
+            tool: "pipx",
+            arguments: ["install", "python-lsp-server"],
+            extraSearchDirectories: ["~/.local/bin"]
+        )
     )
 }

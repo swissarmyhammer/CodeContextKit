@@ -28,6 +28,55 @@ public struct ServerSpec: Sendable, Equatable {
     /// Human-readable guidance shown when `command` isn't found on `$PATH`.
     public let installHint: String
 
+    /// A machine-actionable installer for `command`, or `nil` for hint-only
+    /// behavior.
+    ///
+    /// When present, the supervisor may run `tool` with `arguments` to
+    /// install `command` automatically before falling back to showing
+    /// `installHint`. `nil` means today's behavior: no auto-install is
+    /// attempted, and only `installHint` is shown.
+    public let installer: InstallSpec?
+
+    /// A machine-actionable installer: an executable plus the arguments that
+    /// install a language server's `command`.
+    public struct InstallSpec: Sendable, Equatable {
+        /// The installer executable, looked up on `$PATH` (e.g. `"npm"`,
+        /// `"rustup"`, `"go"`, `"pipx"`, `"brew"`). If `tool` itself is
+        /// missing from `$PATH`, auto-install is skipped and the owning
+        /// `ServerSpec.installHint` behavior stands.
+        public let tool: String
+
+        /// The full argv tail passed to `tool` (e.g.
+        /// `["install", "-g", "typescript-language-server", "typescript"]`).
+        public let arguments: [String]
+
+        /// Well-known bin directories the install lands in that may not be
+        /// on `$PATH`, with `~` expansion left to the use site (e.g.
+        /// `["~/go/bin"]` for `go install`, `["~/.cargo/bin"]` for
+        /// `rustup component add`). Empty when `tool` installs onto `$PATH`
+        /// directly (e.g. `npm`, `brew`).
+        public let extraSearchDirectories: [String]
+
+        /// Creates an install spec.
+        ///
+        /// - Parameters:
+        ///   - tool: The installer executable, looked up on `$PATH`.
+        ///   - arguments: The full argv tail passed to `tool`. Defaults to
+        ///     none.
+        ///   - extraSearchDirectories: Well-known bin directories the
+        ///     install lands in that may not be on `$PATH`. Defaults to
+        ///     none.
+        public init(
+            tool: String,
+            arguments: [String] = [],
+            extraSearchDirectories: [String] = []
+        ) {
+            self.tool = tool
+            self.arguments = arguments
+            self.extraSearchDirectories = extraSearchDirectories
+        }
+    }
+
     /// Creates a server spec.
     ///
     /// - Parameters:
@@ -40,13 +89,16 @@ public struct ServerSpec: Sendable, Equatable {
     ///     seconds, matching every `builtin/lsp/*.yaml` spec's
     ///     `health_check_interval_secs`.
     ///   - installHint: Guidance shown when `command` isn't found on `$PATH`.
+    ///   - installer: A machine-actionable installer for `command`. Defaults
+    ///     to `nil` (hint-only, exactly today's behavior).
     public init(
         command: String,
         args: [String] = [],
         languageIDs: [String],
         startupTimeout: Duration = .seconds(30),
         healthCheckInterval: Duration = .seconds(60),
-        installHint: String
+        installHint: String,
+        installer: InstallSpec? = nil
     ) {
         self.command = command
         self.args = args
@@ -54,5 +106,6 @@ public struct ServerSpec: Sendable, Equatable {
         self.startupTimeout = startupTimeout
         self.healthCheckInterval = healthCheckInterval
         self.installHint = installHint
+        self.installer = installer
     }
 }

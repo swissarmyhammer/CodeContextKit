@@ -65,6 +65,10 @@ public enum PHPLanguage: LanguageModule {
         command: "intelephense",
         args: ["--stdio"],
         languageIDs: [name],
-        installHint: "Install intelephense: npm install -g intelephense"
+        installHint: "Install intelephense: npm install -g intelephense",
+        installer: ServerSpec.InstallSpec(
+            tool: "npm",
+            arguments: ["install", "-g", "intelephense"]
+        )
     )
 }

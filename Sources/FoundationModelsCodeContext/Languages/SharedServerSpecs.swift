@@ -21,7 +21,11 @@ enum SharedServerSpecs {
         command: "typescript-language-server",
         args: ["--stdio"],
         languageIDs: ["typescript", "javascript"],
-        installHint: "Install typescript-language-server: npm install -g typescript-language-server typescript"
+        installHint: "Install typescript-language-server: npm install -g typescript-language-server typescript",
+        installer: ServerSpec.InstallSpec(
+            tool: "npm",
+            arguments: ["install", "-g", "typescript-language-server", "typescript"]
+        )
     )
 
     /// The `clangd` spec shared by the C and C++ modules.

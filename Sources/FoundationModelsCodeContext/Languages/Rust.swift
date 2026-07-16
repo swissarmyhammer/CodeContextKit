@@ -71,6 +71,11 @@ public enum RustLanguage: LanguageModule {
     public static let languageServer: ServerSpec? = ServerSpec(
         command: "rust-analyzer",
         languageIDs: [name],
-        installHint: "Install rust-analyzer: rustup component add rust-analyzer"
+        installHint: "Install rust-analyzer: rustup component add rust-analyzer",
+        installer: ServerSpec.InstallSpec(
+            tool: "rustup",
+            arguments: ["component", "add", "rust-analyzer"],
+            extraSearchDirectories: ["~/.cargo/bin"]
+        )
     )
 }

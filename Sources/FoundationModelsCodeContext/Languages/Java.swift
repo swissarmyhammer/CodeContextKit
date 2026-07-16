@@ -66,6 +66,10 @@ public enum JavaLanguage: LanguageModule {
     public static let languageServer: ServerSpec? = ServerSpec(
         command: "jdtls",
         languageIDs: [name],
-        installHint: "Install Eclipse JDT Language Server"
+        installHint: "Install jdtls (Eclipse JDT Language Server): brew install jdtls",
+        installer: ServerSpec.InstallSpec(
+            tool: "brew",
+            arguments: ["install", "jdtls"]
+        )
     )
 }

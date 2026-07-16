@@ -54,6 +54,11 @@ public enum GoLanguage: LanguageModule {
     public static let languageServer: ServerSpec? = ServerSpec(
         command: "gopls",
         languageIDs: [name],
-        installHint: "Install gopls: go install github.com/golang/tools/gopls@latest"
+        installHint: "Install gopls: go install golang.org/x/tools/gopls@latest",
+        installer: ServerSpec.InstallSpec(
+            tool: "go",
+            arguments: ["install", "golang.org/x/tools/gopls@latest"],
+            extraSearchDirectories: ["~/go/bin"]
+        )
     )
 }

@@ -65,6 +65,11 @@ public enum CSharpLanguage: LanguageModule {
     ]
 
     /// The C# language server spec (`omnisharp`).
+    ///
+    /// `installer` is `nil`: omnisharp has no dependable Homebrew formula.
+    /// The only tap, `OmniSharp/homebrew-omnisharp-roslyn`, is third-party,
+    /// depends on `mono`, and has open installation-failure reports, so
+    /// hint-only degradation is the correct behavior here.
     public static let languageServer: ServerSpec? = ServerSpec(
         command: "omnisharp",
         languageIDs: [name],
