@@ -50,6 +50,12 @@ public actor CodeContextManager<Connection: LanguageServerConnection> {
     /// `ServerSpec.installer`.
     private let autoInstall: LspAutoInstall
 
+    /// The process-running seam handed to every `CodeContext` this manager creates, which its
+    /// supervisor's `ServerInstaller` drives. Defaults to `ProcessInstallRunner()`; tests inject a
+    /// scripted `FakeInstallRunner` so an auto-install integration test driven through this manager
+    /// never spawns (or has any real side effect from) a real installer command.
+    private let installRunner: any InstallRunner
+
     /// Spawns a fresh LSP connection for every daemon any `CodeContext` this manager creates ends
     /// up needing.
     private let connectionFactory: ConnectionFactory<Connection>
@@ -78,6 +84,10 @@ public actor CodeContextManager<Connection: LanguageServerConnection> {
     ///   - autoInstall: The opt-out policy handed to every `CodeContext` this manager creates.
     ///     Defaults to `LspAutoInstall()` (enabled, 300-second timeout); existing callers compile
     ///     unchanged.
+    ///   - installRunner: The process-running seam handed to every `CodeContext` this manager
+    ///     creates, which its supervisor's `ServerInstaller` drives. Defaults to
+    ///     `ProcessInstallRunner()`; tests inject a scripted `FakeInstallRunner` so an auto-install
+    ///     integration test driven through this manager never spawns a real installer command.
     ///   - connectionFactory: Spawns a fresh connection for every LSP daemon any created
     ///     `CodeContext`'s supervisor ends up needing.
     init(
@@ -85,12 +95,14 @@ public actor CodeContextManager<Connection: LanguageServerConnection> {
         clock: any Clock<Duration> = ContinuousClock(),
         eventSource: any FileEventSource = FSEventsFileEventSource(),
         autoInstall: LspAutoInstall = LspAutoInstall(),
+        installRunner: any InstallRunner = ProcessInstallRunner(),
         connectionFactory: @escaping ConnectionFactory<Connection>
     ) async {
         self.embedder = embedder
         self.clock = clock
         self.eventSource = eventSource
         self.autoInstall = autoInstall
+        self.installRunner = installRunner
         self.connectionFactory = connectionFactory
         state = await ManagerState()
     }
@@ -338,6 +350,7 @@ public actor CodeContextManager<Connection: LanguageServerConnection> {
             clock: clock,
             eventSource: eventSource,
             autoInstall: autoInstall,
+            installRunner: installRunner,
             connectionFactory: connectionFactory
         )
         try await context.start()

@@ -367,4 +367,73 @@ struct CodeContextManagerTests {
             }
         }
     }
+
+    // MARK: - Auto-install injection
+
+    /// Whether this test's PHP fixture can genuinely exercise the auto-install path: `npm` (the
+    /// `intelephense` installer's `tool`) must be resolvable on `$PATH` so `ServerInstaller`'s own
+    /// early `BinaryLookup.isOnPath(installer.tool)` gate passes and actually reaches (and can
+    /// therefore be gated by) the injected `FakeInstallRunner`; and `intelephense` itself must be
+    /// *absent* so the daemon genuinely lands `.notFound` rather than starting `.running`
+    /// immediately because the machine running this test happens to already have it installed.
+    /// Mirrors `CodeContextE2ETests.canExercisePHPAutoInstall`'s own `.enabled(if:)` gating: a
+    /// genuine *skip* (not a vacuous pass) when the environment doesn't support the scenario.
+    private static var canExercisePHPAutoInstall: Bool {
+        BinaryLookup.isOnPath("npm") && !BinaryLookup.isOnPath("intelephense")
+    }
+
+    /// The `installRunner` injected into a `CodeContextManager` reaches the supervisor of every
+    /// per-root `CodeContext` the manager builds — the seam that lets an auto-install integration
+    /// test drive a manager (not just a bare `CodeContext`) against a scripted `FakeInstallRunner`.
+    ///
+    /// Opens a PHP workspace through the manager with a fake runner scripted to fail, gated shut so
+    /// the daemon parks observably at `.installing` the moment `context(for:)` returns (matching
+    /// `CodeContextE2ETests`'s no-flicker pattern), then releases the gate and asserts the failed
+    /// install re-settles `.notFound` having invoked the injected runner exactly once. A manager
+    /// that dropped `installRunner` instead of forwarding it would build the context with the
+    /// default `ProcessInstallRunner`, leaving `invocations` empty (and potentially spawning a real
+    /// `npm` install) — so a nonzero, single invocation is what proves the forwarding seam.
+    @Test(.enabled(if: CodeContextManagerTests.canExercisePHPAutoInstall, "gated on npm present and intelephense absent from $PATH"))
+    func injectedInstallRunnerReachesEachPerRootContextSupervisor() async throws {
+        try await withTemporaryWorkspace { root in
+            try write("{\"name\": \"fixture/fixture\"}", to: "composer.json", in: root)
+
+            let runner = FakeInstallRunner()
+            await runner.updateResult(.success(InstallRunResult(exitCode: 1, output: "boom")))
+            await runner.closeGate()
+
+            let manager = await CodeContextManager<FakeLanguageServerConnection>(
+                embedder: FakeEmbedder(dimension: 8),
+                eventSource: FakeFileEventSource(),
+                installRunner: runner,
+                connectionFactory: fakeConnectionFactory(pid: 1, processState: ProcessState())
+            )
+
+            let context = try await manager.context(for: root)
+
+            // The manager forwarded the injected runner: the intelephense daemon is already
+            // `.installing` (gated shut so it cannot yet resolve) the moment the open returns.
+            let statusesWhileInstalling = await context.lspStatus()
+            #expect(statusesWhileInstalling.first { $0.command == "intelephense" }?.state == .installing)
+
+            await runner.openGate()
+
+            // Poll (real time, bounded) until the failed install's forced restart re-lands
+            // `.notFound`.
+            let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+            while ContinuousClock.now < deadline {
+                if await context.state.isReady { break }
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            #expect(await context.state.isReady)
+
+            let finalState = await context.lspStatus().first { $0.command == "intelephense" }?.state
+            #expect(finalState == .notFound)
+
+            let invocations = await runner.invocations
+            #expect(invocations.count == 1, "the injected runner must be invoked exactly once, proving the manager forwarded it")
+
+            await manager.shutdown()
+        }
+    }
 }
