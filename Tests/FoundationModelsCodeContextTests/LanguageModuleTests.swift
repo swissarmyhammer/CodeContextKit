@@ -220,7 +220,7 @@ struct LanguageModuleTests {
         let spec = ServerSpec(command: "rust-analyzer", languageIDs: ["rust"], installHint: "install it")
         #expect(spec.startupTimeout == .seconds(30))
         #expect(spec.healthCheckInterval == .seconds(60))
-        #expect(spec.args.isEmpty)
+        #expect(spec.arguments.isEmpty)
     }
 
     @Test

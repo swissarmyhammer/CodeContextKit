@@ -18,6 +18,30 @@ comments:
   id: 01kxne0vejkqpza3dnzf8ybvj9
   text: 'Adversarial double-check (double-check agent) returned PASS: diff scope matches spec exactly, ServerSpec init backward-compatible, every populated installer/installHint pair verified by direct read, nil cases (omnisharp/sourcekit-lsp/clangd) correct, CLI argument arrays correct. One stylistic nit noted (force-unwraps in the cross-check test loop would crash rather than fail on regression) — fixed by switching to guard-let on the optional `languageServer` before unwrapping `installer`. Re-ran full `swift test` after the fix: 499 tests, 42 suites, all passing, exit 0. Task is green and left in doing for /review.'
   timestamp: 2026-07-16T12:22:00.914974+00:00
+- actor: claude-code
+  id: 01kxng2s9rv8vkk57dgsgq49k5
+  text: |-
+    Pulled back from review to doing to address review finding: ServerSpec.args (an abbreviation) renamed to ServerSpec.arguments for consistency with the same-file InstallSpec.arguments naming.
+
+    Changes:
+    - Sources/FoundationModelsCodeContext/Languages/ServerSpec.swift: property, doc comment, init parameter, and self-assignment renamed args -> arguments.
+    - Sources/FoundationModelsCodeContext/Languages/SharedServerSpecs.swift: typescript-language-server spec's args: ["--stdio"] -> arguments: ["--stdio"].
+    - Sources/FoundationModelsCodeContext/Languages/PHP.swift: intelephense spec's args: ["--stdio"] -> arguments: ["--stdio"].
+    - Sources/FoundationModelsCodeContext/LSP/LSPDaemon.swift: doc comment and processConnectionFactory's arguments: spec.args -> spec.arguments.
+    - Tests/FoundationModelsCodeContextTests/LiveSourceKitTests.swift: matching doc comment and call site updated to spec.arguments.
+    - Tests/FoundationModelsCodeContextTests/LanguageModuleTests.swift: #expect(spec.args.isEmpty) -> #expect(spec.arguments.isEmpty).
+
+    Rust.swift, Go.swift, Python.swift, Java.swift, CSharp.swift, Swift.swift needed no changes: none of their ServerSpec(...) constructions pass args: explicitly (they rely on the default [] or have no launch arguments).
+
+    Verified: swift build exit 0 (no new warnings, only pre-existing unrelated mlx-swift bundle warning), swift test: 499 tests, 42 suites, all passing, exit 0. Grep confirms no remaining references to the old ServerSpec.args name in Sources/ or Tests/ (only unrelated <args> doc placeholders in DiagnosticsScope.swift referring to generic CLI argv). Sent for adversarial double-check via really-done before handoff.
+  timestamp: 2026-07-16T12:58:01.400812+00:00
+- actor: claude-code
+  id: 01kxng9rgsfn9njs7e9hrn1300
+  text: |-
+    Adversarial double-check (double-check agent, via really-done) returned PASS: confirmed via `git diff --stat` that exactly the expected files changed, every hunk is a pure 1:1 args->arguments substitution with no reordering/default/value changes, exhaustive grep across Sources/ and Tests/ found zero leftover ServerSpec.args references (only unrelated <args> CLI-shape doc placeholders in DiagnosticsScope.swift), and directly read Rust/Go/Python/Java/CSharp/Swift/C/CPP/TypeScript/JavaScript/TSX modules to confirm none construct ServerSpec with an args:/arguments: label needing a fix. Independently re-ran swift build (exit 0) and swift test (499 tests, 42 suites, exit 0).
+
+    Checked off the review finding on the task. Task remains in doing, green, ready for re-review.
+  timestamp: 2026-07-16T13:01:49.977416+00:00
 position_column: doing
 position_ordinal: '80'
 title: Add InstallSpec to ServerSpec and populate per-language install commands
@@ -55,3 +79,7 @@ Note: this touches ServerSpec.swift plus ~7 one-line per-language module edits a
 
 ## Workflow
 - Use `/tdd` — write failing tests first, then implement to make them pass.
+
+## Review Findings (2026-07-16 07:24)
+
+- [x] `Sources/FoundationModelsCodeContext/Languages/ServerSpec.swift:15` — `args` is an abbreviation for `arguments`; the naming-clarity rule requires clarity over brevity and prohibits abbreviations. The new `InstallSpec` struct in the same file uses the full word `arguments` for the same semantic purpose, creating an inconsistency in naming within the file. Rename the property to `arguments` to align with the naming convention used in the new `InstallSpec` and to follow the clarity-over-brevity principle.

@@ -96,12 +96,12 @@ struct LiveSourceKitTests {
     /// production default has less headroom than this smoke test needs to stay reliable on a
     /// loaded machine.
     /// - Parameter requestTimeout: The per-request timeout every spawned connection is configured with.
-    /// - Returns: A factory that spawns `spec.command` with `spec.args` as a real child process.
+    /// - Returns: A factory that spawns `spec.command` with `spec.arguments` as a real child process.
     private static func liveConnectionFactory(requestTimeout: Duration) -> ConnectionFactory<ProcessLanguageServerConnection> {
         { spec, _ in
             let connection = try ProcessLanguageServerConnection(
                 command: spec.command,
-                arguments: spec.args,
+                arguments: spec.arguments,
                 requestTimeout: requestTimeout
             )
             return ConnectionHandle(

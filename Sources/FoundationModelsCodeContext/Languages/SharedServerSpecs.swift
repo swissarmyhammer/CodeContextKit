@@ -19,7 +19,7 @@ enum SharedServerSpecs {
     /// language identifier, and TSX documents are submitted as `typescript`.
     static let typeScriptFamily = ServerSpec(
         command: "typescript-language-server",
-        args: ["--stdio"],
+        arguments: ["--stdio"],
         languageIDs: ["typescript", "javascript"],
         installHint: "Install typescript-language-server: npm install -g typescript-language-server typescript",
         installer: ServerSpec.InstallSpec(

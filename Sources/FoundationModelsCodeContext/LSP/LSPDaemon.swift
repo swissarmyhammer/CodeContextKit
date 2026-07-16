@@ -463,7 +463,7 @@ extension LSPDaemon where Connection == ProcessLanguageServerConnection {
     /// every pipe.
     /// - Parameter clock: The clock the spawned connection's own per-request timeout sleeps
     ///   against. Defaults to `ContinuousClock()`.
-    /// - Returns: A factory that spawns `spec.command` with `spec.args` as a real child process,
+    /// - Returns: A factory that spawns `spec.command` with `spec.arguments` as a real child process,
     ///   ignoring the workspace root (the connection itself is workspace-agnostic; the daemon
     ///   passes the root separately to the `initialize` handshake).
     static func processConnectionFactory(
@@ -472,7 +472,7 @@ extension LSPDaemon where Connection == ProcessLanguageServerConnection {
         { spec, _ in
             let connection = try ProcessLanguageServerConnection(
                 command: spec.command,
-                arguments: spec.args,
+                arguments: spec.arguments,
                 clock: clock
             )
             return ConnectionHandle(

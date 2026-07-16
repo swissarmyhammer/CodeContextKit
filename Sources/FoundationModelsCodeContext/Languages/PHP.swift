@@ -63,7 +63,7 @@ public enum PHPLanguage: LanguageModule {
     /// The PHP language server spec (`intelephense`).
     public static let languageServer: ServerSpec? = ServerSpec(
         command: "intelephense",
-        args: ["--stdio"],
+        arguments: ["--stdio"],
         languageIDs: [name],
         installHint: "Install intelephense: npm install -g intelephense",
         installer: ServerSpec.InstallSpec(
