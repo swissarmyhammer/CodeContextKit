@@ -231,7 +231,7 @@ actor LSPDaemon<Connection: LanguageServerConnection> {
     ///   `CodeContextError.handshakeFailed` if the handshake fails or times out; whatever the
     ///   connection factory throws if spawning the connection fails.
     func start() async throws {
-        guard Self.isExecutableOnPath(spec.command) else {
+        guard BinaryLookup.isOnPath(spec.command) else {
             if !hasWarnedNotFound {
                 Log.lsp.warning(
                     "LSP binary not found on PATH: \(self.spec.command, privacy: .public) (\(self.spec.installHint, privacy: .public))"
@@ -414,26 +414,6 @@ actor LSPDaemon<Connection: LanguageServerConnection> {
             "LSP daemon failure (\(self.spec.command, privacy: .public), attempt \(self.consecutiveFailures)): \(reason, privacy: .public)"
         )
         currentState = .failed(reason: reason, attempts: consecutiveFailures)
-    }
-
-    /// Searches `$PATH` for an executable named `command`, mirroring how a shell resolves a bare
-    /// command name to a binary.
-    ///
-    /// New functionality: `ProcessLanguageServerConnection` also spawns via a `$PATH` lookup
-    /// (through `/usr/bin/env`), but that lookup surfaces as a generic spawn failure rather than
-    /// the distinct `.notFound` state this daemon needs to report before ever spawning.
-    /// - Parameter command: The executable name to search for (no path separators).
-    /// - Returns: `true` if `command` resolves to an executable file on `$PATH`; `false` otherwise.
-    private static func isExecutableOnPath(_ command: String) -> Bool {
-        guard let pathVariable = ProcessInfo.processInfo.environment["PATH"] else { return false }
-        let searchDirectories = pathVariable.split(separator: ":").map(String.init)
-        for directory in searchDirectories {
-            let candidatePath = (directory as NSString).appendingPathComponent(command)
-            if FileManager.default.isExecutableFile(atPath: candidatePath) {
-                return true
-            }
-        }
-        return false
     }
 
     /// Computes the exponential-backoff delay for the given zero-indexed consecutive-failure

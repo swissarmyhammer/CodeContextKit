@@ -37,15 +37,13 @@ struct LiveSourceKitTests {
 
     // MARK: - Availability
 
-    /// Whether `sourcekit-lsp` resolves on `$PATH`, checked the same way a shell resolves a bare
-    /// command name — mirrors `LSPDaemon`'s private `isExecutableOnPath(_:)`, reimplemented here
-    /// (rather than reached into across the file, where it's `private`) since this is a distinct,
-    /// test-only availability probe rather than the daemon's own startup guard.
+    /// Whether `sourcekit-lsp` resolves on `$PATH`, checked via the same shared `BinaryLookup`
+    /// helper `LSPDaemon` and `ServerInstaller` use for their own `$PATH` lookups — this is just a
+    /// test-only availability probe rather than the daemon's own startup guard, but there is no
+    /// reason to hand-roll a second copy of the PATH scan now that a shared, non-`private` helper
+    /// exists.
     private static var isSourceKitLSPOnPath: Bool {
-        guard let pathVariable = ProcessInfo.processInfo.environment["PATH"] else { return false }
-        return pathVariable.split(separator: ":").contains { directory in
-            FileManager.default.isExecutableFile(atPath: (String(directory) as NSString).appendingPathComponent("sourcekit-lsp"))
-        }
+        BinaryLookup.isOnPath("sourcekit-lsp")
     }
 
     // MARK: - Fixture

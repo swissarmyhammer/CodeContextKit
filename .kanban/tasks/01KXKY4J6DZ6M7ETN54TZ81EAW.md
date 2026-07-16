@@ -1,10 +1,34 @@
 ---
 assignees:
 - claude-code
+comments:
+- actor: claude-code
+  id: 01kxnhv14vhvtp2hdnvsx1jqjs
+  text: |-
+    Implemented ServerInstaller engine per spec:
+    - Sources/FoundationModelsCodeContext/LSP/ServerInstaller.swift: BinaryLookup (extracted from LSPDaemon's old private isExecutableOnPath), LspAutoInstall (public policy, isEnabled default true, timeout default 300s), InstallRunResult, InstallRunner protocol, ProcessInstallRunner (real Process spawn via /usr/bin/env, combined stdout+stderr capture with bounded tail buffer, timeout via injectable clock, prompt termination on both timeout and ambient-task cancellation via withTaskCancellationHandler, using a ResumeGuard to avoid double-resuming the completion continuation when the timeout-kill and the natural terminationHandler both race), and ServerInstaller actor (memoizes a Task<Bool,Never> per spec.command so concurrent/sequential callers dedupe to exactly one runner invocation).
+    - Sources/FoundationModelsCodeContext/LSP/LSPDaemon.swift: removed the old private isExecutableOnPath, start() now calls BinaryLookup.isOnPath(spec.command).
+    - Tests/FoundationModelsCodeContextTests/Support/FakeInstallRunner.swift: scripted actor fake with invocation recording, updateResult(_:), and a gate (closeGate/openGate) for concurrency tests.
+    - Tests/FoundationModelsCodeContextTests/ServerInstallerTests.swift: 8 ServerInstaller cases (success, nonzero exit, throw, disabled policy, nil installer, missing tool, sequential dedupe, concurrent dedupe) + 4 ProcessInstallRunner integration cases (real exit 0 w/ combined-output capture, real exit 1, real timeout, real cancellation).
+
+    Verification: `swift build` clean; `swift test` -> 511 tests / 44 suites all passing, including the new 12 tests and the pre-existing LSPDaemonTests exercising the extracted BinaryLookup helper. Adversarial double-check review launched to confirm no concurrency/Sendable issues before handoff.
+  timestamp: 2026-07-16T13:28:44.443671+00:00
+- actor: claude-code
+  id: 01kxnj984kcyssa2j64ra9jd2w
+  text: |-
+    Adversarial double-check (via really-done) returned REVISE with 3 findings; addressed all three:
+    1. Tests/FoundationModelsCodeContextTests/LiveSourceKitTests.swift's `isSourceKitLSPOnPath` had a stale doc comment referencing the now-deleted `LSPDaemon.isExecutableOnPath` and duplicated the PATH-scan logic BinaryLookup was created to centralize — replaced its body with a direct `BinaryLookup.isOnPath("sourcekit-lsp")` call and fixed the comment.
+    2. Documented the accepted, narrow PID-reuse race in ProcessInstallRunner.run (the timeout task and the cancellation handler both call `kill(pid, SIGKILL)` unconditionally on a raw captured pid) — same accepted tradeoff ProcessLanguageServerConnection.close() already makes, now called out explicitly in the doc comment rather than left implicit.
+    3. Tests/FoundationModelsCodeContextTests/Support/FakeInstallRunner.swift's `run()` now asserts via `precondition` if a second call arrives while already gated, so a future at-most-once regression fails loudly instead of silently hanging.
+
+    Re-verified after fixes: `swift build` clean, `swift test` -> 511/511 tests in 44 suites passing.
+
+    Task is green and complete: ServerInstaller actor, LspAutoInstall policy, InstallRunner/ProcessInstallRunner, and the shared BinaryLookup helper are all implemented per spec, with 12 new tests plus the fixes above. Leaving in doing for /review.
+  timestamp: 2026-07-16T13:36:30.355660+00:00
 depends_on:
 - 01KXKY3XWKM1TRR9X0F4SQ0SF0
-position_column: todo
-position_ordinal: '8180'
+position_column: doing
+position_ordinal: '80'
 title: Add ServerInstaller engine with injectable process runner and LspAutoInstall policy
 ---
 ## What
