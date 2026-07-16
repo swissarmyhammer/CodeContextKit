@@ -18,8 +18,8 @@ comments:
   timestamp: 2026-07-16T20:34:56.630174+00:00
 depends_on:
 - 01KXKY5MDHKKE49ZX9BA2H6BDJ
-position_column: doing
-position_ordinal: '80'
+position_column: done
+position_ordinal: b380
 title: 'Document LSP auto-install: README, plan.md, and example opt-out'
 ---
 ## What
