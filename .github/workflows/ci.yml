@@ -16,3 +16,4 @@ jobs:
     with:
       integration-gate-env: CCK_LIVE_LSP
       integration-xctest-glob: "*FoundationModelsCodeContextTests.xctest"
+      example-targets: CodeContextExample ManagerExample
