@@ -89,8 +89,9 @@ protocol InstallRunner: Sendable {
 /// The production `InstallRunner`: spawns `tool` as a real child process via Foundation
 /// `Process`.
 ///
-/// Spawns via `/usr/bin/env <tool> <args>`, matching `ProcessLanguageServerConnection`'s
-/// `$PATH`-resolution approach. Terminates the child in both of its exit paths: a `timeout` that
+/// Spawns via `ProcessUtilities.envExecutablePath` (`/usr/bin/env <tool> <args>`), the same
+/// shared constant `ProcessLanguageServerConnection` spawns through for its own `$PATH`
+/// resolution. Terminates the child in both of its exit paths: a `timeout` that
 /// elapses before the process exits kills it and throws `CodeContextError.timeout`, and the
 /// *calling* task being cancelled (e.g. a production `shutdown()` racing a real `brew`/`npm` run)
 /// kills it via `withTaskCancellationHandler` — without this, a caller wanting to shut down
@@ -112,7 +113,7 @@ struct ProcessInstallRunner: InstallRunner {
 
     func run(tool: String, arguments: [String], timeout: Duration) async throws -> InstallRunResult {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.executableURL = URL(fileURLWithPath: ProcessUtilities.envExecutablePath)
         process.arguments = [tool] + arguments
 
         let outputPipe = Pipe()
@@ -146,7 +147,10 @@ struct ProcessInstallRunner: InstallRunner {
     /// `process.terminationHandler` firing on natural exit, `timeoutTask` firing first, and
     /// `withTaskCancellationHandler`'s `onCancel` firing on cancellation — are coordinated, all
     /// synchronized through a single `ResumeOnce` so whichever path resolves first wins and the
-    /// other two become no-ops.
+    /// other two become no-ops. The continuation body itself only wires the two competing
+    /// completion sources together — `scheduleTimeout` and `installTerminationHandler` below own
+    /// the actual setup, so this function's own nesting stays at `withTaskCancellationHandler` →
+    /// continuation, rather than also nesting the timeout task and the termination handler inline.
     ///
     /// Captures `pid` as a raw `Int32` rather than closing over `process` itself: `Process` is not
     /// `Sendable`, so every closure below that can run concurrently with this function's own
@@ -182,26 +186,10 @@ struct ProcessInstallRunner: InstallRunner {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<InstallRunResult, Error>) in
                 let resumeGuard = ResumeOnce(continuation: continuation)
-
-                let timeoutTask = Task {
-                    do {
-                        try await clock.sleep(for: timeout)
-                    } catch {
-                        // Cancelled below once the process exits on its own first.
-                        return
-                    }
-                    kill(pid, SIGKILL)
-                    resumeGuard.resume(throwing: CodeContextError.timeout(timeout))
-                }
-
-                process.terminationHandler = { finished in
-                    timeoutTask.cancel()
-                    let exitCode = finished.terminationStatus
-                    Task {
-                        await drainTask.value
-                        resumeGuard.resume(returning: InstallRunResult(exitCode: exitCode, output: tailBuffer.snapshot()))
-                    }
-                }
+                let timeoutTask = Self.scheduleTimeout(pid: pid, timeout: timeout, clock: clock, resumeGuard: resumeGuard)
+                Self.installTerminationHandler(
+                    on: process, timeoutTask: timeoutTask, drainTask: drainTask, tailBuffer: tailBuffer, resumeGuard: resumeGuard
+                )
             }
         } onCancel: {
             // Kills promptly on cancellation independent of the continuation/timeout race above:
@@ -212,20 +200,77 @@ struct ProcessInstallRunner: InstallRunner {
         }
     }
 
+    /// Schedules `awaitCompletion`'s timeout side of the race: after `timeout` elapses, kills
+    /// `pid` and resumes `resumeGuard` with `CodeContextError.timeout`.
+    ///
+    /// A no-op in the common case where the installer exits before `timeout`:
+    /// `installTerminationHandler` cancels the returned task as soon as the process exits
+    /// naturally, which this task observes as its own `clock.sleep(for:)` throwing and simply
+    /// returns from, without touching `pid` or `resumeGuard`.
+    /// - Parameters:
+    ///   - pid: The installer process id to kill if this task fires.
+    ///   - timeout: How long to wait before firing.
+    ///   - clock: The clock to sleep against.
+    ///   - resumeGuard: Resumed with `CodeContextError.timeout(timeout)` if this task fires first.
+    /// - Returns: The scheduled timeout task, so `installTerminationHandler` can cancel it once
+    ///   the process exits naturally.
+    private static func scheduleTimeout(
+        pid: Int32,
+        timeout: Duration,
+        clock: any Clock<Duration>,
+        resumeGuard: ResumeOnce<InstallRunResult>
+    ) -> Task<Void, Never> {
+        Task {
+            do {
+                try await clock.sleep(for: timeout)
+            } catch {
+                // Cancelled below once the process exits on its own first.
+                return
+            }
+            kill(pid, SIGKILL)
+            resumeGuard.resume(throwing: CodeContextError.timeout(timeout))
+        }
+    }
+
+    /// Installs `process.terminationHandler`, `awaitCompletion`'s natural-exit side of the race:
+    /// cancels `timeoutTask` (the process beat the clock), awaits `drainTask` so the returned
+    /// result's `output` is complete, and resumes `resumeGuard` with the exit code.
+    /// - Parameters:
+    ///   - process: The process to attach the handler to.
+    ///   - timeoutTask: Cancelled as soon as the handler fires, since the race is already decided.
+    ///   - drainTask: Awaited before resolving so `tailBuffer`'s snapshot is complete.
+    ///   - tailBuffer: Snapshotted into the resolved `InstallRunResult.output`.
+    ///   - resumeGuard: Resumed with the completed `InstallRunResult` once `drainTask` finishes.
+    private static func installTerminationHandler(
+        on process: Process,
+        timeoutTask: Task<Void, Never>,
+        drainTask: Task<Void, Never>,
+        tailBuffer: BoundedTailBuffer,
+        resumeGuard: ResumeOnce<InstallRunResult>
+    ) {
+        process.terminationHandler = { finished in
+            timeoutTask.cancel()
+            let exitCode = finished.terminationStatus
+            Task {
+                await drainTask.value
+                resumeGuard.resume(returning: InstallRunResult(exitCode: exitCode, output: tailBuffer.snapshot()))
+            }
+        }
+    }
+
     /// Reads `fileDescriptor` until EOF, appending every chunk read to `tailBuffer`.
     ///
-    /// Runs detached, outside any actor isolation, mirroring
-    /// `ProcessLanguageServerConnection.runStderrDrainLoop`: both loop on the shared
-    /// `ProcessUtilities.readChunk(from:bufferSize:)` (see its doc comment for why a single raw
-    /// `read(2)` call is used, and why `EINTR` is retried rather than treated as EOF).
+    /// Runs detached, outside any actor isolation. Delegates the read-decode-append loop itself
+    /// to the shared `ProcessUtilities.drainChunks(from:bufferSize:onChunk:)` — the same helper
+    /// `ProcessLanguageServerConnection.runStderrDrainLoop` calls — passing only what differs
+    /// between the two call sites: what to do with each decoded chunk (append alone here, vs.
+    /// log-then-append there).
     /// - Parameters:
     ///   - fileDescriptor: The pipe read end's raw file descriptor.
     ///   - tailBuffer: The bounded tail buffer to append every read chunk to.
     private static func drainOutput(fileDescriptor: Int32, into tailBuffer: BoundedTailBuffer) {
-        while let chunk = ProcessUtilities.readChunk(from: fileDescriptor, bufferSize: 65536) {
-            if let text = String(data: chunk, encoding: .utf8) {
-                tailBuffer.append(chunk: text)
-            }
+        ProcessUtilities.drainChunks(from: fileDescriptor) { text in
+            tailBuffer.append(chunk: text)
         }
     }
 }

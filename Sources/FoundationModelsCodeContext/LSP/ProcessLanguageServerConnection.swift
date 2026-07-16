@@ -169,7 +169,7 @@ public actor ProcessLanguageServerConnection: LanguageServerConnection {
         clock: any Clock<Duration> = ContinuousClock()
     ) throws {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.executableURL = URL(fileURLWithPath: ProcessUtilities.envExecutablePath)
         process.arguments = [command] + arguments
 
         let stdinPipe = Pipe()
@@ -601,20 +601,13 @@ public actor ProcessLanguageServerConnection: LanguageServerConnection {
         notificationContinuation: AsyncStream<ServerNotification>.Continuation
     ) {
         var decoder = JSONRPCMessageDecoder()
-        while let chunk = ProcessUtilities.readChunk(from: stdoutFileDescriptor, bufferSize: Self.readChunkSize) {
+        while let chunk = ProcessUtilities.readChunk(from: stdoutFileDescriptor, bufferSize: ProcessUtilities.defaultChunkSize) {
             for message in decoder.append(bytes: chunk) {
                 route(message: message, pendingRequests: pendingRequests, notificationContinuation: notificationContinuation)
             }
         }
         pendingRequests.failAll(with: CodeContextError.notRunning)
     }
-
-    /// The read chunk size used by both background loops — large enough that a single framed
-    /// JSON-RPC message almost always arrives in one read, without requesting an unboundedly
-    /// large buffer from the OS. Passed to the shared `ProcessUtilities.readChunk(from:bufferSize:)`
-    /// (see its doc comment for why reads happen on a raw file descriptor via `read(2)` rather than
-    /// through `FileHandle`, and why `EINTR` is retried instead of treated as EOF).
-    private static let readChunkSize = 65536
 
     /// Routes one decoded JSON-RPC message to a pending request or a server notification.
     private static func route(
@@ -668,15 +661,18 @@ public actor ProcessLanguageServerConnection: LanguageServerConnection {
 
     /// Drains the child process's stderr to `Log.lsp` at `.debug` until EOF, capturing every
     /// chunk into `tailBuffer` along the way.
+    ///
+    /// Delegates the read-decode-append loop itself to the shared
+    /// `ProcessUtilities.drainChunks(from:bufferSize:onChunk:)` — the same helper
+    /// `ProcessInstallRunner.drainOutput` calls — passing only what differs between the two call
+    /// sites: what to do with each decoded chunk (log then append here, vs. append alone there).
     /// - Parameters:
     ///   - stderrFileDescriptor: The child process's stderr read end's raw file descriptor.
     ///   - tailBuffer: The bounded tail buffer `recentStderrTail()` reads from.
     private static func runStderrDrainLoop(stderrFileDescriptor: Int32, tailBuffer: BoundedTailBuffer) {
-        while let chunk = ProcessUtilities.readChunk(from: stderrFileDescriptor, bufferSize: Self.readChunkSize) {
-            if let text = String(data: chunk, encoding: .utf8), !text.isEmpty {
-                Log.lsp.debug("\(text, privacy: .public)")
-                tailBuffer.append(chunk: text)
-            }
+        ProcessUtilities.drainChunks(from: stderrFileDescriptor) { text in
+            Log.lsp.debug("\(text, privacy: .public)")
+            tailBuffer.append(chunk: text)
         }
     }
 }

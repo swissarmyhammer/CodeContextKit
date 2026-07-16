@@ -5,6 +5,18 @@ import Foundation
 /// `ProcessInstallRunner` (`ServerInstaller.swift`) to read from a child process's pipe file
 /// descriptors.
 enum ProcessUtilities {
+    /// The `env(1)` path both `ProcessLanguageServerConnection` and `ProcessInstallRunner` spawn
+    /// through to resolve a bare executable name (e.g. `"rust-analyzer"`, `"npm"`) against
+    /// `$PATH`, exactly as a shell would, without either caller pre-resolving a full path itself.
+    static let envExecutablePath = "/usr/bin/env"
+
+    /// The chunk size both background drain loops (`ProcessLanguageServerConnection`'s reader and
+    /// stderr loops, `ProcessInstallRunner`'s combined-output loop) request by default from
+    /// `readChunk(from:bufferSize:)` / `drainChunks(from:bufferSize:onChunk:)` — large enough that
+    /// a single framed JSON-RPC message or one line of installer output almost always arrives in
+    /// one read, without requesting an unboundedly large buffer from the OS.
+    static let defaultChunkSize = 65536
+
     /// Reads whatever is currently available from `fileDescriptor`, up to `bufferSize` bytes.
     ///
     /// Issues a single raw POSIX `read(2)` call on the raw file descriptor rather than going
@@ -51,6 +63,29 @@ enum ProcessUtilities {
                 continue
             }
             return nil
+        }
+    }
+
+    /// Reads `fileDescriptor` until EOF, decoding each raw chunk from `readChunk(from:bufferSize:)`
+    /// as UTF-8 and invoking `onChunk` for every successfully decoded, non-empty chunk, in order.
+    ///
+    /// Factors out the read-decode-append *loop* shared by `ProcessLanguageServerConnection`'s
+    /// `runStderrDrainLoop` and `ProcessInstallRunner`'s `drainOutput`: both looped on `readChunk`
+    /// until EOF, decoded each chunk as UTF-8, and forwarded it somewhere (a log plus a tail
+    /// buffer, vs. a tail buffer alone) — this is that shared loop, parameterized over what a
+    /// caller does with each decoded chunk, so the loop itself exists in exactly one place instead
+    /// of once per caller. A chunk that fails to decode as UTF-8, or decodes empty, is silently
+    /// skipped rather than passed to `onChunk` — both callers already treated that as a no-op.
+    /// - Parameters:
+    ///   - fileDescriptor: The pipe read end's raw file descriptor.
+    ///   - bufferSize: The maximum number of bytes to read in one `read(2)` call. Defaults to
+    ///     `defaultChunkSize`.
+    ///   - onChunk: Invoked, in order, with each decoded non-empty chunk read before EOF.
+    static func drainChunks(from fileDescriptor: Int32, bufferSize: Int = defaultChunkSize, onChunk: (String) -> Void) {
+        while let chunk = readChunk(from: fileDescriptor, bufferSize: bufferSize) {
+            if let text = String(data: chunk, encoding: .utf8), !text.isEmpty {
+                onChunk(text)
+            }
         }
     }
 }
