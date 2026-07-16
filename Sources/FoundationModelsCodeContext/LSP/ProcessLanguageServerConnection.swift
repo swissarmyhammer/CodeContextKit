@@ -11,13 +11,20 @@ import Foundation
 /// actor too. `@unchecked Sendable` is safe because every access goes
 /// through `lock`.
 ///
+/// Every registered continuation is wrapped in a `ResumeOnce` (see its doc comment) rather than
+/// stored raw: the table's own dictionary removal already hands each continuation to exactly one
+/// of `resolve(id:with:)` / `resolveOrBuffer(id:response:)` / `failAll(with:)`, but routing every
+/// resume through the same primitive `ProcessInstallRunner` uses keeps the "resume at most once"
+/// guarantee in one place instead of each call site re-deriving it from dictionary-removal
+/// semantics on its own.
+///
 /// Not `private`: unit-tested directly (`PendingRequestTableTests`) since the
 /// register/resolve ordering it guarantees is only reliably exercisable this
 /// way — reproducing the real race below via an actual child process would
 /// require winning a microsecond-scale scheduling race on demand.
 final class PendingRequestTable: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuations: [Int: CheckedContinuation<Data, Error>] = [:]
+    private var continuations: [Int: ResumeOnce<Data>] = [:]
     private var earlyResponses: [Int: Data] = [:]
 
     /// Registers `continuation` as awaiting the response to request `id`.
@@ -36,7 +43,7 @@ final class PendingRequestTable: @unchecked Sendable {
             continuation.resume(returning: buffered)
             return
         }
-        continuations[id] = continuation
+        continuations[id] = ResumeOnce(continuation: continuation)
         lock.unlock()
     }
 
@@ -56,13 +63,12 @@ final class PendingRequestTable: @unchecked Sendable {
     @discardableResult
     func resolve(id: Int, with result: Result<Data, Error>) -> Bool {
         lock.lock()
-        guard let continuation = continuations.removeValue(forKey: id) else {
+        guard let resumer = continuations.removeValue(forKey: id) else {
             lock.unlock()
             return false
         }
         lock.unlock()
-        continuation.resume(with: result)
-        return true
+        return resumer.resume(with: result)
     }
 
     /// Resolves the pending request `id` with `response` if it is already registered; otherwise
@@ -86,13 +92,13 @@ final class PendingRequestTable: @unchecked Sendable {
     ///   - response: The raw response message bytes.
     func resolveOrBuffer(id: Int, response: Data) {
         lock.lock()
-        guard let continuation = continuations.removeValue(forKey: id) else {
+        guard let resumer = continuations.removeValue(forKey: id) else {
             earlyResponses[id] = response
             lock.unlock()
             return
         }
         lock.unlock()
-        continuation.resume(returning: response)
+        resumer.resume(returning: response)
     }
 
     /// Fails every still-pending request with `error`, used when the connection closes or the
@@ -105,46 +111,9 @@ final class PendingRequestTable: @unchecked Sendable {
         continuations.removeAll()
         earlyResponses.removeAll()
         lock.unlock()
-        for continuation in pending.values {
-            continuation.resume(throwing: error)
+        for resumer in pending.values {
+            resumer.resume(throwing: error)
         }
-    }
-}
-
-/// Thread-safe bounded tail of a child process's stderr output.
-///
-/// Fed from `runStderrDrainLoop`, which already reads stderr chunks outside actor isolation to
-/// log them at `.debug`; this buffer captures the same chunks so `LSPDaemon` can enrich a
-/// handshake-failure error with whatever the server printed before it died. A plain
-/// `NSLock`-guarded class rather than actor state, matching `PendingRequestTable` above: it must
-/// be readable from `recentStderrTail()` without an actor hop, since callers building an error
-/// message often can't `await` (e.g. from inside a `catch` that's already off the actor).
-/// `@unchecked Sendable` is safe because every access goes through `lock`.
-private final class StderrTailBuffer: @unchecked Sendable {
-    /// The number of most-recent chunks retained; older chunks are dropped.
-    private static let maxChunks = 20
-
-    private let lock = NSLock()
-    private var chunks: [String] = []
-
-    /// Appends one stderr chunk, evicting the oldest chunk if the buffer is now over capacity.
-    /// - Parameter chunk: The raw text read from the child process's stderr.
-    func append(chunk: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        chunks.append(chunk)
-        if chunks.count > Self.maxChunks {
-            chunks.removeFirst(chunks.count - Self.maxChunks)
-        }
-    }
-
-    /// A snapshot of every retained chunk, oldest first.
-    /// - Returns: The retained stderr chunks joined together, or an empty string if none have
-    ///   been captured yet.
-    func snapshot() -> String {
-        lock.lock()
-        defer { lock.unlock() }
-        return chunks.joined()
     }
 }
 
@@ -164,7 +133,7 @@ public actor ProcessLanguageServerConnection: LanguageServerConnection {
     private let stdoutHandle: FileHandle
     private let stderrHandle: FileHandle
     private nonisolated let pendingRequests = PendingRequestTable()
-    private nonisolated let stderrTailBuffer = StderrTailBuffer()
+    private nonisolated let stderrTailBuffer = BoundedTailBuffer(maxChunks: 20)
     private let requestTimeout: Duration
     private let clock: any Clock<Duration>
     private var nextRequestID = 0
@@ -745,7 +714,7 @@ public actor ProcessLanguageServerConnection: LanguageServerConnection {
     /// - Parameters:
     ///   - stderrFileDescriptor: The child process's stderr read end's raw file descriptor.
     ///   - tailBuffer: The bounded tail buffer `recentStderrTail()` reads from.
-    private static func runStderrDrainLoop(stderrFileDescriptor: Int32, tailBuffer: StderrTailBuffer) {
+    private static func runStderrDrainLoop(stderrFileDescriptor: Int32, tailBuffer: BoundedTailBuffer) {
         while let chunk = Self.readChunk(from: stderrFileDescriptor) {
             if let text = String(data: chunk, encoding: .utf8), !text.isEmpty {
                 Log.lsp.debug("\(text, privacy: .public)")

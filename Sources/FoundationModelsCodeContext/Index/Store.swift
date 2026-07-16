@@ -49,8 +49,8 @@ public enum IndexLayer: Sendable, Hashable {
 /// requires every one of its stored properties to be an immutable `let` of
 /// `Sendable` type — this type is the `let`-held box for the one piece of
 /// mutable state the generation counter needs. Matches the
-/// `PendingRequestTable`/`StderrTailBuffer` pattern in
-/// `ProcessLanguageServerConnection.swift`: `@unchecked Sendable` is safe
+/// `PendingRequestTable`/`BoundedTailBuffer` pattern in the `LSP` module:
+/// `@unchecked Sendable` is safe
 /// here because every access goes through `lock`.
 private final class GenerationCounter: @unchecked Sendable {
     private let lock = NSLock()

@@ -86,88 +86,6 @@ protocol InstallRunner: Sendable {
     func run(tool: String, arguments: [String], timeout: Duration) async throws -> InstallRunResult
 }
 
-/// Thread-safe bounded tail of a process's combined stdout+stderr output.
-///
-/// Mirrors `ProcessLanguageServerConnection`'s `StderrTailBuffer`: an install command can produce
-/// substantial output (a verbose `npm install -g` or `go install` run), so only the most recent
-/// chunks are retained, bounding memory while still giving `ServerInstaller`'s failure log enough
-/// context to diagnose why an install failed. `@unchecked Sendable` is safe because every access
-/// goes through `lock`.
-private final class InstallOutputTailBuffer: @unchecked Sendable {
-    /// The number of most-recent chunks retained; older chunks are dropped.
-    private static let maxChunks = 40
-
-    private let lock = NSLock()
-    private var chunks: [String] = []
-
-    /// Appends one output chunk, evicting the oldest chunk if the buffer is now over capacity.
-    /// - Parameter chunk: The raw text read from the process's combined stdout/stderr pipe.
-    func append(chunk: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        chunks.append(chunk)
-        if chunks.count > Self.maxChunks {
-            chunks.removeFirst(chunks.count - Self.maxChunks)
-        }
-    }
-
-    /// A snapshot of every retained chunk, oldest first.
-    /// - Returns: The retained output chunks joined together, or an empty string if none have
-    ///   been captured yet.
-    func snapshot() -> String {
-        lock.lock()
-        defer { lock.unlock() }
-        return chunks.joined()
-    }
-}
-
-/// Resumes a single `CheckedContinuation` at most once.
-///
-/// `ProcessInstallRunner.run` races two independent completion sources against the same
-/// continuation — the process exiting on its own (`Process.terminationHandler`) and the injected
-/// clock's timeout firing first (which force-kills the process, so the terminationHandler still
-/// fires afterward) — exactly the kind of race `PendingRequestTable.resolve(id:with:)` guards
-/// against for JSON-RPC responses vs. request timeouts. This is the same idempotent-resume
-/// guarantee, specialized to a single continuation instead of a table keyed by request id.
-/// `@unchecked Sendable` is safe because every access goes through `lock`.
-private final class ResumeGuard<Value: Sendable>: @unchecked Sendable {
-    private let lock = NSLock()
-    private var hasResumed = false
-    private let continuation: CheckedContinuation<Value, Error>
-
-    /// Creates a guard wrapping `continuation`.
-    /// - Parameter continuation: The continuation to resume at most once.
-    init(continuation: CheckedContinuation<Value, Error>) {
-        self.continuation = continuation
-    }
-
-    /// Resumes the wrapped continuation with `value`, unless it has already been resumed.
-    /// - Parameter value: The value to resume with.
-    func resume(returning value: Value) {
-        lock.lock()
-        guard !hasResumed else {
-            lock.unlock()
-            return
-        }
-        hasResumed = true
-        lock.unlock()
-        continuation.resume(returning: value)
-    }
-
-    /// Resumes the wrapped continuation by throwing `error`, unless it has already been resumed.
-    /// - Parameter error: The error to resume with.
-    func resume(throwing error: Error) {
-        lock.lock()
-        guard !hasResumed else {
-            lock.unlock()
-            return
-        }
-        hasResumed = true
-        lock.unlock()
-        continuation.resume(throwing: error)
-    }
-}
-
 /// The production `InstallRunner`: spawns `tool` as a real child process via Foundation
 /// `Process`.
 ///
@@ -222,7 +140,7 @@ struct ProcessInstallRunner: InstallRunner {
         // complexity of a synchronized "already exited" flag.
         let pid = process.processIdentifier
 
-        let tailBuffer = InstallOutputTailBuffer()
+        let tailBuffer = BoundedTailBuffer(maxChunks: 40)
         let outputFileDescriptor = outputPipe.fileHandleForReading.fileDescriptor
         let drainTask = Task.detached {
             Self.drainOutput(fileDescriptor: outputFileDescriptor, into: tailBuffer)
@@ -232,7 +150,7 @@ struct ProcessInstallRunner: InstallRunner {
 
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<InstallRunResult, Error>) in
-                let resumeGuard = ResumeGuard(continuation: continuation)
+                let resumeGuard = ResumeOnce(continuation: continuation)
 
                 let timeoutTask = Task {
                     do {
@@ -273,7 +191,7 @@ struct ProcessInstallRunner: InstallRunner {
     /// - Parameters:
     ///   - fileDescriptor: The pipe read end's raw file descriptor.
     ///   - tailBuffer: The bounded tail buffer to append every read chunk to.
-    private static func drainOutput(fileDescriptor: Int32, into tailBuffer: InstallOutputTailBuffer) {
+    private static func drainOutput(fileDescriptor: Int32, into tailBuffer: BoundedTailBuffer) {
         let chunkSize = 65536
         var buffer = [UInt8](repeating: 0, count: chunkSize)
         while true {

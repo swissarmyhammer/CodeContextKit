@@ -244,7 +244,7 @@ struct CodeContextStateTests {
 /// `onChange` is a `@Sendable () -> Void` closure, so a plain captured `var` can't be mutated
 /// from inside it under strict concurrency checking. `@unchecked Sendable` is safe here because
 /// every access goes through `lock`, matching the pattern this codebase already uses for
-/// `StderrTailBuffer`/`PendingRequestTable` in `ProcessLanguageServerConnection.swift`.
+/// `BoundedTailBuffer`/`PendingRequestTable` in the `LSP` module.
 private final class ObservationFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var flag = false
