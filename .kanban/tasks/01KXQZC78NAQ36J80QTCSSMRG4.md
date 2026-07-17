@@ -1,4 +1,24 @@
 ---
+comments:
+- actor: claude-code
+  id: 01kxrzs2509bqfctpse8ta7bb0
+  text: |-
+    Implementation landed and green (really-done: full suite 541 tests pass; SearchCorpus.swift diagnostics 0 errors / 0 warnings).
+
+    Changes (committed diff is source-only):
+    - Sources/.../Search/SearchCorpus.swift — rewrote the actor for incremental per-file re-index. Keeps a per-file cache (keyed by ts_chunks.file_path) of decoded embedding vectors + precomputed RankedDocuments. snapshot() short-circuits on unchanged generation; otherwise rebuild() does a cheap signature scan (SELECT id, COALESCE(LENGTH(embedding),0) — no text, no blobs) diffed against the cache, reloads only changed/new files, drops removed files, and repacks the cosine matrix from cached vectors (memcpy). Cold start / empty cache = full bulk load (the preserved fallback). SearchCorpusSnapshot unchanged.
+    - Tests/.../SearchCorpusIncrementalTests.swift (new) — equivalence vs from-scratch (results + BM25 signals + chunkIds/matrix), perf-guard seams (re-tokenize/re-decode only the edited file), cosine repack preserves untouched vectors, deletion, no-op generation bump, and the dimension-change regression below.
+
+    Note: Package.resolved is gitignored/untracked in this repo (commit 674553d) — not part of the commit. Locally it pins FoundationModelsRanker 29ed9dd; CI resolves main fresh from Package.swift, which now carries the streaming corpus APIs.
+
+    double-check (really-done adversarial gate) verdict was REVISE, one real High finding: the original (id, hasEmbedding) change signature missed an in-place embedder DIMENSION change (reconcileEmbedderDimension clears all embeddings to NULL then re-embeds at the new width in place — same ids, NULL-ness nets unchanged), which would have served stale vectors + a wrong embeddingDimension and silently zeroed cosine. FIXED: the signature now carries embedding byte length (SQLite LENGTH(), no blob transfer), which subsumes presence and catches dimension changes; added inPlaceEmbeddingDimensionChangeIsPickedUpIncrementally to lock it in. Also fixed Finding 3 (counters now computed as locals and assigned once after the last await, reentrancy-safe). Finding-1 residual (a same-id, same-byte-width re-embed under a *different* embedder, only via IndexAdmin.rebuildIndex(.embedding)) is a logged accepted limitation, documented in SignatureEntry — closing it would require hashing every blob on every scan, defeating the cheap-scan design; it self-heals on the next re-chunk or dimension change.
+
+    Left in `doing` for /review.
+  timestamp: 2026-07-17T21:30:03.296176+00:00
+- actor: claude-code
+  id: 01kxrzt4rdybyat219bapfeccp
+  text: 'Iteration 1 — /implement landed green in `doing`. SearchCorpus rewritten for per-file incremental re-index (cache keyed by ts_chunks.file_path; generation short-circuit; signature diff carries embedding byte-length to catch dimension changes). Added SearchCorpusIncrementalTests. Full suite green (541 tests, 0 failures). NOTE: implementer adopted Ranker''s additive streaming *pattern* + RankedDocument primitive rather than wrapping FoundationModelsRanker.SearchCorpus directly (its add() hardcodes item id as BM25 primary field; this corpus needs the symbol path there). User has flagged a follow-up to actually use Ranker''s streaming/updateable index APIs — capturing as a separate task.'
+  timestamp: 2026-07-17T21:30:38.733046+00:00
 position_column: todo
 position_ordinal: '80'
 title: Adopt Ranker streaming corpus APIs for incremental file re-index
